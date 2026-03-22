@@ -1,4 +1,5 @@
 # src/authentication/google_oauth_router.py
+from pydantic import BaseModel
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -7,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from authlib.integrations.starlette_client import OAuth, OAuthError
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
 from src.config import settings
 from src.database import get_async_session
@@ -31,6 +34,58 @@ oauth.register(
 )
 
 google_router = APIRouter(prefix="/auth/google", tags=["Auth Google"])
+
+# 1. Definimos qué esperamos recibir desde Flutter
+class GoogleMobileAuthRequest(BaseModel):
+    id_token: str
+
+# 2. Creamos el endpoint POST que Flutter está buscando
+@google_router.post("/mobile-signin", summary="Verify Google Token from Mobile App")
+async def google_mobile_signin(
+    data: GoogleMobileAuthRequest,
+    db_session: Annotated[AsyncSession, Depends(get_async_session)],
+    request: Request
+):
+    try:
+        # Validar el token con Google usando tu CLIENT_ID de WEB
+        # Nota: Google recomienda usar el Web Client ID para validación en backend
+        id_info = id_token.verify_oauth2_token(
+            data.id_token, 
+            requests.Request(), 
+            settings.GOOGLE_CLIENT_ID 
+        )
+
+        email = id_info.get("email").lower()
+        
+        # 3. Reutilizamos tu lógica de base de datos que ya tienes en el callback
+        user = await get_user_by_email(db_session, email=email)
+        
+        if not user:
+            # Crear usuario si no existe
+            user = await create_user_from_google_credentials(
+                db_session,
+                email=email,
+                given_name=id_info.get("given_name", ""),
+                family_name=id_info.get("family_name", ""),
+                picture=id_info.get("picture", None),
+                request=request
+            )
+        
+        # 4. Generar los tokens de OppyChat (JWT)
+        access_token = create_access_token(subject=user.email)
+        refresh_token = create_refresh_token(subject=user.email)
+
+        await db_session.commit()
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer"
+        }
+
+    except ValueError as e:
+        logger.error(f"Token de Google inválido: {e}")
+        raise HTTPException(status_code=401, detail="Token de Google inválido")
 
 @google_router.get("/login", summary="Initiate Google OAuth login flow")
 async def google_login(request: Request):
