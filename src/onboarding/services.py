@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from src.models import User
 from src.onboarding.models import PlacementTest
 from . import schemas
+from src.onboarding.constants import calculate_cefr_level
 
 logger = logging.getLogger(__name__)
 
@@ -95,12 +96,7 @@ async def process_test_results(db: AsyncSession, user: User, payload: schemas.Pl
     avg = (payload.writing_result + payload.reading_result + 
            payload.listening_result + payload.speaking_result) / 4
     
-    level = "A1"
-    if avg >= 95: level = "C2"
-    elif avg >= 80: level = "C1"
-    elif avg >= 60: level = "B2"
-    elif avg >= 40: level = "B1"
-    elif avg >= 20: level = "A2"
+    level = calculate_cefr_level(avg)
 
     # BUSCAR O CREAR (Upsert)
     query = select(PlacementTest).where(

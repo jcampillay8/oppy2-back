@@ -1,121 +1,90 @@
 # src/onboarding/test_services/writing.py
-import json
 import logging
-import random
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
-
-# IMPORTANTE: Añadir estas importaciones de tus modelos
-from src.onboarding.models import PlacementTest, WritingTopic, UserWritingAssignment
 from src.ai_management.services import ask_oppy_ai
-from .. import schemas
+from src.models import User
 
 logger = logging.getLogger(__name__)
 
-async def evaluate_writing_task(
-    db: AsyncSession, 
-    user_id: int, 
-    target_language: str, 
-    user_text: str
-) -> float:
-    """Evalúa dinámicamente según el tema asignado."""
-    try:
-        # 1. Buscar asignación previa
-        assign_stmt = select(UserWritingAssignment).where(
-            UserWritingAssignment.user_id == user_id,
-            UserWritingAssignment.target_language == target_language
-        ).options(selectinload(UserWritingAssignment.topic))
-        
-        assign_res = await db.execute(assign_stmt)
-        assignment = assign_res.scalar_one_or_none()
-        
-        # Consigna dinámica
-        topic_title = assignment.topic.title if assignment else "General Topic"
-        topic_prompt = assignment.topic.prompt if assignment else "General writing task"
-
-        dynamic_system_prompt = f"""
-        Eres un examinador experto en idiomas.
-        Evalúa el texto basado en la consigna: '{topic_title}: {topic_prompt}'
-        Criterios: Gramática (25%), Vocabulario (25%), Coherencia (25%), Relevancia (25%).
-
-        DEBES responder ÚNICAMENTE en formato JSON:
-        {{ "score": <float 0-100>, "feedback": "<explicación>", "detected_level": "<A1-C2>" }}
-        """
-
-        # 2. IA Call
-        response_str = await ask_oppy_ai(
-            db=db,
-            system_instruction=dynamic_system_prompt,
-            user_prompt=f"Texto del estudiante: {user_text}",
-            user_id=user_id,
-            caller="onboarding_writing",
-            expect_json=True
-        )
-
-        data = json.loads(response_str)
-        score = float(data.get("score", 0))
-
-        # 3. Upsert Result
-        query = select(PlacementTest).where(
-            PlacementTest.user_id == user_id,
-            PlacementTest.target_language == target_language
-        )
-        result = await db.execute(query)
-        test = result.scalar_one_or_none()
-
-        if not test:
-            test = PlacementTest(user_id=user_id, target_language=target_language, writing_result=score)
-            db.add(test)
-        else:
-            test.writing_result = score
-        
-        await db.commit()
-        return score
-
-    except Exception as e:
-        logger.error(f"Error crítico en evaluate_writing_task: {e}")
-        return 0.0
-
-async def get_or_assign_writing_topic(
-    db: AsyncSession, 
-    user_id: int, 
-    selection: schemas.WritingCategorySelection
-) -> WritingTopic:
-    """Busca una pregunta ya asignada o elige una nueva al azar de la categoría."""
+async def generate_writing_question(db: AsyncSession, user: User, target_lang: str) -> str:
+    """
+    Genera una pregunta personalizada nivel B1 basada en la ocupación y bio.
+    Aplica lógica de relevancia para decidir si usar la bio o no.
+    """
     
-    # 1. Check existing
-    stmt = select(UserWritingAssignment).where(
-        UserWritingAssignment.user_id == user_id,
-        UserWritingAssignment.target_language == selection.target_language
-    ).options(selectinload(UserWritingAssignment.topic))
+    # Preparamos el contexto
+    occupation = user.occupation or "Estudiante"
+    bio = user.bio or ""
+    idioma_nombre = "Inglés" if target_lang == "en" else "Español"
+
+    system_instruction = f"""
+    Eres un examinador de idiomas experto y empático para la app OppyChat.
+    Tu objetivo es generar UNA sola pregunta de escritura para un test diagnóstico de {idioma_nombre}.
     
-    result = await db.execute(stmt)
-    assignment = result.scalar_one_or_none()
+    PERFIL DEL USUARIO:
+    - Nombre: {user.username}
+    - Ocupación: {occupation}
+    - Bio: {bio}
 
-    if assignment:
-        return assignment.topic
+    REGLAS DE GENERACIÓN:
+    1. NIVEL: La pregunta debe ser entendible para un nivel B1 (Intermedio bajo).
+    2. RELEVANCIA: Analiza si la 'Bio' aporta información que complemente la 'Ocupación'. 
+       - SI aporta (ej: Ocupación: Cineasta, Bio: Escribo en un blog): Conecta ambos mundos.
+       - NO aporta (ej: Ocupación: Pastelera, Bio: Salgo a trotar): Ignora la bio y enfócate 100% en la ocupación.
+    3. ESTRUCTURA: Sé directo. Empieza con un breve saludo validando su perfil y luego lanza la pregunta.
+    4. IDIOMA: Escribe la pregunta COMPLETAMENTE en {idioma_nombre}.
+    5. RESTRICCIÓN: No uses lenguaje técnico extremadamente complejo.
+    """
 
-    # 2. Pick new from bank
-    query = select(WritingTopic).where(
-        WritingTopic.category == selection.category,
-        WritingTopic.target_language == selection.target_language
+    user_prompt = "Genera la pregunta de escritura ahora."
+
+    # Llamamos a tu orquestador de IA
+    question = await ask_oppy_ai(
+        db=db,
+        system_instruction=system_instruction,
+        user_prompt=user_prompt,
+        user_id=user.id,
+        caller="writing_test_generator",
+        expect_json=False
     )
-    topics_result = await db.execute(query)
-    topics = topics_result.scalars().all()
 
-    if not topics:
-        raise ValueError(f"No hay preguntas en la categoría: {selection.category}")
+    return question.strip()
 
-    chosen_topic = random.choice(topics)
+async def evaluate_writing_response(db: AsyncSession, user_id: int, user_answer: str, target_lang: str) -> dict:
+    """
+    Usa la IA para evaluar la respuesta del usuario.
+    Retorna un JSON con score, feedback y nivel.
+    """
+    idioma_nombre = "Inglés" if target_lang == "en" else "Español"
 
-    # 3. Save assignment
-    new_assignment = UserWritingAssignment(
+    system_instruction = f"""
+    Eres un evaluador de idiomas oficial (tipo TOEFL/IELTS). 
+    Debes calificar la respuesta de un usuario a una prueba de escritura de {idioma_nombre}.
+
+    CRITERIOS DE EVALUACIÓN:
+    1. Gramática y Estructura.
+    2. Vocabulario y Variedad.
+    3. Coherencia y respuesta a la pregunta.
+
+    FORMATO DE SALIDA (ESTRICTAMENTE JSON):
+    {{
+      "score": (número del 0 al 100),
+      "feedback": "Breve explicación en ESPAÑOL de lo que hizo bien y qué mejorar",
+      "suggested_level": "A1, A2, B1, B2, C1 o C2"
+    }}
+    """
+
+    user_prompt = f"Evalúa esta respuesta de nivel diagnóstico: '{user_answer}'"
+
+    # Llamamos a la IA esperando un JSON
+    evaluation_json = await ask_oppy_ai(
+        db=db,
+        system_instruction=system_instruction,
+        user_prompt=user_prompt,
         user_id=user_id,
-        topic_id=chosen_topic.id,
-        target_language=selection.target_language
+        caller="writing_test_evaluator",
+        expect_json=True
     )
-    db.add(new_assignment)
-    await db.commit()
-
-    return chosen_topic
+    
+    import json
+    return json.loads(evaluation_json)

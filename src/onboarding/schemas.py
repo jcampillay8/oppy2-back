@@ -42,19 +42,18 @@ class PlacementTestResponse(BaseModel):
     class Config:
         from_attributes = True # Permite leer desde el modelo de SQLAlchemy directamente
 
-class WritingAnswer(BaseModel):
+class WritingQuestionResponse(BaseModel):
+    """Respuesta con la pregunta generada por la IA"""
+    question: str
     target_language: str
-    text: str = Field(..., min_length=10)
 
-class WritingCategorySelection(BaseModel):
-    category: str = Field(..., pattern="^(narrative|opinion|descriptive)$")
+class WritingSubmission(BaseModel):
+    """Lo que el usuario envía desde Flutter para ser evaluado"""
+    user_answer: str = Field(..., min_length=10, max_length=2000)
     target_language: str = Field(..., pattern="^(en|es)$")
 
-class WritingTopicResponse(BaseModel):
-    id: int
-    category: str
-    title: str
-    prompt: str
-    
-    class Config:
-        from_attributes = True
+class WritingEvaluationResponse(BaseModel):
+    """Resultado de la evaluación de la IA"""
+    score: float # 0 a 100
+    feedback: str
+    suggested_level: str # B1, B2, etc.

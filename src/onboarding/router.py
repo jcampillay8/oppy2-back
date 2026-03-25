@@ -5,6 +5,7 @@ from src.database import get_async_session
 from src.dependencies import get_current_user 
 from src.models import User # Asegúrate de que la ruta al modelo User sea correcta
 from . import schemas, services
+from .test_services.writing import generate_writing_question
 from .test_services import writing
 
 router = APIRouter(prefix="/onboarding", tags=["Onboarding"])
@@ -32,55 +33,78 @@ async def select_language(
 ):
     return await services.set_user_target_language(db, current_user, selection)
 
-# --- NUEVOS Endpoints para el Test de Writing ---
-
-@router.post("/writing/setup", response_model=schemas.WritingTopicResponse)
-async def setup_writing_test(
-    selection: schemas.WritingCategorySelection,
+@router.get("/writing/question", response_model=schemas.WritingQuestionResponse)
+async def get_writing_question(
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    PASO 1: El usuario elige una categoría (narrative, opinion, descriptive).
-    El backend busca una pregunta asignada o elige una al azar y la devuelve.
-    """
-    try:
-        topic = await writing.get_or_assign_writing_topic(db, current_user.id, selection)
-        return topic # FastAPI usará el schema WritingTopicResponse para filtrar los campos
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Error al asignar el tema de escritura.")
+    # 1. Necesitamos saber qué idioma eligió el usuario. 
+    # Buscamos en su PlacementTest activo.
+    from src.onboarding.models import PlacementTest
+    from sqlalchemy import select
+    
+    result = await db.execute(
+        select(PlacementTest).where(PlacementTest.user_id == current_user.id)
+    )
+    test_record = result.scalars().first()
 
-@router.post("/writing/evaluate")
-async def submit_writing_test(
-    payload: schemas.WritingAnswer,
-    db: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(get_current_user)
-):
-    try:
-        score = await writing.evaluate_writing_task(
-            db=db,
-            user_id=current_user.id,
-            target_language=payload.target_language,
-            user_text=payload.text
+    if not test_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Debes seleccionar un idioma antes de iniciar el test."
         )
-        return {
-            "status": "success", 
-            "score": score,
-            "message": "Evaluación completada con éxito."
-        }
-    except Exception as e:
-        # Esto asegura que el frontend reciba un 500 claro si la IA falla
-        raise HTTPException(status_code=500, detail="Error durante la evaluación de IA.")
 
-# --- Finalización ---
+    # 2. Generamos la pregunta con Gemini
+    question_text = await generate_writing_question(
+        db, 
+        current_user, 
+        test_record.target_language
+    )
 
-@router.post("/submit-test", response_model=schemas.PlacementTestResponse)
-async def submit_placement_test(
-    payload: schemas.PlacementTestSubmit,
+    return {
+        "question": question_text,
+        "target_language": test_record.target_language
+    }
+
+@router.post("/writing/evaluate", response_model=schemas.WritingEvaluationResponse)
+async def post_writing_evaluation(
+    payload: schemas.WritingSubmission,
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user)
 ):
-    """Cierra el proceso de Onboarding una vez que todos los tests (W/R/L/S) terminan."""
-    return await services.process_test_results(db, current_user, payload)
+    # 1. Obtenemos la evaluación de la IA (Score + Feedback + Nivel Sugerido por IA)
+    result = await writing.evaluate_writing_response(
+        db, 
+        current_user.id, 
+        payload.user_answer, 
+        payload.target_language
+    )
+
+    # 2. 🚨 LA CORRECCIÓN: Sobrescribimos el nivel de la IA con tu escala oficial
+    from src.onboarding.constants import calculate_cefr_level
+    
+    # Calculamos el nivel real según el score que dio la IA
+    real_level = calculate_cefr_level(result["score"])
+    
+    # Actualizamos el diccionario del resultado antes de enviarlo al front o guardarlo
+    result["suggested_level"] = real_level
+
+    # 3. Actualizamos el registro del PlacementTest en la DB
+    from src.onboarding.models import PlacementTest
+    from sqlalchemy import select
+    
+    query = select(PlacementTest).where(
+        PlacementTest.user_id == current_user.id,
+        PlacementTest.target_language == payload.target_language # Mejor ser específicos con el idioma
+    )
+    db_result = await db.execute(query)
+    test_record = db_result.scalars().first()
+
+    if test_record:
+        test_record.writing_result = result["score"]
+        # Ahora sí guardamos el nivel real (ej: B2) en la base de datos
+        test_record.suggested_level = real_level 
+        await db.commit()
+
+    # 4. Retornamos el resultado (que ahora dirá B2 en el JSON)
+    return result

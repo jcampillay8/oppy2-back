@@ -2,7 +2,9 @@
 import asyncio
 import logging
 import json
+
 from typing import Optional
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from json_repair import repair_json as repair
@@ -76,7 +78,8 @@ async def ask_oppy_ai(
                 total_tokens=ai_res.total_tokens,
                 estimated_cost=ai_res.estimated_cost,
                 request_duration_ms=ai_res.duration_ms,
-                api_success=True
+                api_success=True,
+                created_at=datetime.utcnow().replace(tzinfo=None)
             )
             db.add(log)
             await db.commit()

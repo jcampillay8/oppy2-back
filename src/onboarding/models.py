@@ -36,28 +36,3 @@ class PlacementTest(BaseModel):
 
     user: Mapped["User"] = relationship("User", back_populates="placement_tests")
 
-class WritingTopic(BaseModel):
-    """Banco de preguntas para el test de Writing."""
-    __tablename__ = "writing_topics"
-    __table_args__ = {'schema': settings.DB_SCHEMA}
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    category: Mapped[str] = mapped_column(String(50)) # 'narrative', 'opinion', 'descriptive'
-    target_language: Mapped[str] = mapped_column(String(10)) # 'en', 'es'
-    title: Mapped[str] = mapped_column(String(200)) # Ej: 'A Change of Plans'
-    prompt: Mapped[str] = mapped_column(Text) # La descripción larga
-
-class UserWritingAssignment(BaseModel):
-    """Guarda qué pregunta se le asignó a un usuario para evitar que cambie al azar."""
-    __tablename__ = "user_writing_assignments"
-    __table_args__ = (
-        UniqueConstraint('user_id', 'target_language', name='_user_lang_assignment_uc'),
-        {'schema': settings.DB_SCHEMA}
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey(f"{settings.DB_SCHEMA}.users.id"))
-    topic_id: Mapped[int] = mapped_column(ForeignKey(f"{settings.DB_SCHEMA}.writing_topics.id"))
-    target_language: Mapped[str] = mapped_column(String(10))
-    
-    topic: Mapped["WritingTopic"] = relationship("WritingTopic")
