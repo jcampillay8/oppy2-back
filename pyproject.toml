@@ -87,6 +87,7 @@ dependencies = [
   "resend==2.13.1",
 
   "py-spy>=0.4.0", # Para perfilado de rendimiento
+  "json-repair>=0.30.0",
 
   # --- Testing ---
   "pytest==8.4.1",

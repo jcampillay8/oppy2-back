@@ -74,6 +74,18 @@ class User(BaseModel):
     email_confirmation_tokens: Mapped[List["EmailConfirmationToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     password_reset_tokens: Mapped[List["PasswordResetToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
+    # --- Nueva Relación Onboarding ---
+    placement_tests: Mapped[List["PlacementTest"]] = relationship(
+        "PlacementTest", 
+        back_populates="user", 
+        cascade="all, delete-orphan"
+    )
+    llm_requests: Mapped[List["LLMRequestLog"]] = relationship(
+        "LLMRequestLog", 
+        back_populates="user", 
+        cascade="all, delete-orphan"
+    )
+
     chats: Mapped[List["Chat"]] = relationship(secondary=user_chat, back_populates="users")
     messages: Mapped[List["Message"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
@@ -131,3 +143,6 @@ class ReadStatus(RemoveBaseFieldsMixin, BaseModel):
 
     chat: Mapped["Chat"] = relationship()
     user: Mapped["User"] = relationship()
+
+from src.onboarding.models import PlacementTest
+from src.ai_management.models import LLMRequestLog

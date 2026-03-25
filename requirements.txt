@@ -26,6 +26,7 @@ authlib[starlette]>=1.2.0,<2.0.0
 python-multipart>=0.0.6
 
 # AI & Mail
+json-repair>=0.30.0
 openai>=1.0.0
 google-generativeai>=0.5.0
 resend==2.13.1

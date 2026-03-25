@@ -19,6 +19,9 @@ from src.routers import routers
 from src.models import User 
 from src.registration.router import account_router
 
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
 # ==============================
 # 🌐 Middleware for HTTPS redirect (Railway & proxies)
 # ==============================
@@ -108,3 +111,14 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Cerrando aplicación...")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    # Esto imprimirá en tu consola de Docker el error exacto de Pydantic
+    print(f"--- ERRORES DE VALIDACIÓN ---")
+    print(exc.errors())
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": exc.body},
+    )
