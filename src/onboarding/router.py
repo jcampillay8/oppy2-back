@@ -7,6 +7,9 @@ from src.models import User # Asegúrate de que la ruta al modelo User sea corre
 from . import schemas, services
 from .test_services.writing import generate_writing_question
 from .test_services import writing
+from src.onboarding.models import PlacementTest, PlacementTestDetail
+from src.onboarding.constants import calculate_cefr_level
+from sqlalchemy import select
 
 router = APIRouter(prefix="/onboarding", tags=["Onboarding"])
 
@@ -38,11 +41,7 @@ async def get_writing_question(
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. Necesitamos saber qué idioma eligió el usuario. 
-    # Buscamos en su PlacementTest activo.
-    from src.onboarding.models import PlacementTest
-    from sqlalchemy import select
-    
+    # 1. Buscamos el test activo
     result = await db.execute(
         select(PlacementTest).where(PlacementTest.user_id == current_user.id)
     )
@@ -55,11 +54,35 @@ async def get_writing_question(
         )
 
     # 2. Generamos la pregunta con Gemini
-    question_text = await generate_writing_question(
+    question_text = await writing.generate_writing_question(
         db, 
         current_user, 
         test_record.target_language
     )
+
+    # 3. 🚀 UPSERT del detalle: Guardamos la pregunta de inmediato
+    detail_query = select(PlacementTestDetail).where(
+        PlacementTestDetail.placement_test_id == test_record.id,
+        PlacementTestDetail.section == "writing"
+    )
+    detail_res = await db.execute(detail_query)
+    detail = detail_res.scalar_one_or_none()
+
+    if not detail:
+        detail = PlacementTestDetail(
+            placement_test_id=test_record.id,
+            section="writing",
+            question_text=question_text
+        )
+        db.add(detail)
+    else:
+        # Si ya existía, actualizamos por si Gemini generó una nueva
+        detail.question_text = question_text
+        detail.user_response = None  # Limpiamos rastro de intentos previos
+        detail.feedback_text = None
+        detail.score = None
+
+    await db.commit()
 
     return {
         "question": question_text,
@@ -72,7 +95,7 @@ async def post_writing_evaluation(
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. Obtenemos la evaluación de la IA (Score + Feedback + Nivel Sugerido por IA)
+    # 1. Obtenemos evaluación de la IA
     result = await writing.evaluate_writing_response(
         db, 
         current_user.id, 
@@ -80,31 +103,38 @@ async def post_writing_evaluation(
         payload.target_language
     )
 
-    # 2. 🚨 LA CORRECCIÓN: Sobrescribimos el nivel de la IA con tu escala oficial
-    from src.onboarding.constants import calculate_cefr_level
-    
-    # Calculamos el nivel real según el score que dio la IA
+    # 2. Aplicamos tu escala de niveles oficial
     real_level = calculate_cefr_level(result["score"])
-    
-    # Actualizamos el diccionario del resultado antes de enviarlo al front o guardarlo
     result["suggested_level"] = real_level
 
-    # 3. Actualizamos el registro del PlacementTest en la DB
-    from src.onboarding.models import PlacementTest
-    from sqlalchemy import select
-    
+    # 3. Buscamos el test y el detalle para actualizar
     query = select(PlacementTest).where(
         PlacementTest.user_id == current_user.id,
-        PlacementTest.target_language == payload.target_language # Mejor ser específicos con el idioma
+        PlacementTest.target_language == payload.target_language
     )
     db_result = await db.execute(query)
     test_record = db_result.scalars().first()
 
-    if test_record:
-        test_record.writing_result = result["score"]
-        # Ahora sí guardamos el nivel real (ej: B2) en la base de datos
-        test_record.suggested_level = real_level 
-        await db.commit()
+    if not test_record:
+        raise HTTPException(status_code=404, detail="Test no encontrado")
 
-    # 4. Retornamos el resultado (que ahora dirá B2 en el JSON)
+    # Actualizamos el Score y Nivel en la tabla principal
+    test_record.writing_result = result["score"]
+    test_record.suggested_level = real_level 
+
+    # 4. 🚀 ACTUALIZAMOS EL DETALLE (Persistencia completa)
+    detail_query = select(PlacementTestDetail).where(
+        PlacementTestDetail.placement_test_id == test_record.id,
+        PlacementTestDetail.section == "writing"
+    )
+    detail_res = await db.execute(detail_query)
+    detail = detail_res.scalar_one_or_none()
+
+    if detail:
+        detail.user_response = payload.user_answer
+        detail.feedback_text = result["feedback"]
+        detail.score = result["score"]
+    
+    await db.commit()
+
     return result

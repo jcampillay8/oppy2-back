@@ -36,3 +36,42 @@ class PlacementTest(BaseModel):
 
     user: Mapped["User"] = relationship("User", back_populates="placement_tests")
 
+    details: Mapped[list["PlacementTestDetail"]] = relationship(
+        "PlacementTestDetail", 
+        back_populates="placement_test",
+        cascade="all, delete-orphan"
+    )
+
+class PlacementTestDetail(BaseModel):
+    __tablename__ = "placement_test_details"
+    __table_args__ = (
+        # Un detalle único por test e idioma por sección (ej: no dos 'writing' para el mismo test)
+        UniqueConstraint('placement_test_id', 'section', name='_test_section_uc'),
+        {'schema': settings.DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    placement_test_id: Mapped[int] = mapped_column(
+        ForeignKey(f"{settings.DB_SCHEMA}.placement_tests.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    
+    # "writing", "reading", "listening", "speaking"
+    section: Mapped[str] = mapped_column(String(20), nullable=False)
+    
+    # El contenido generado por la IA o el sistema
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # Lo que el usuario escribió o grabó (transcripción)
+    user_response: Mapped[str] = mapped_column(Text, nullable=True)
+    
+    # El feedback detallado que nos dio Gemini
+    feedback_text: Mapped[str] = mapped_column(Text, nullable=True)
+    
+    # Puntaje específico de esta sección (redundante pero útil para histórico)
+    score: Mapped[float] = mapped_column(Float, nullable=True)
+
+    # Relación inversa
+    placement_test: Mapped["PlacementTest"] = relationship(
+        "PlacementTest", back_populates="details"
+    )
