@@ -1,6 +1,6 @@
 # src/onboarding/schemas.py
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 # --- SCHEMAS EXISTENTES (Perfil) ---
@@ -57,3 +57,7 @@ class WritingEvaluationResponse(BaseModel):
     score: float # 0 a 100
     feedback: str
     suggested_level: str # B1, B2, etc.
+
+
+class ReadingSubmission(BaseModel):
+    answers: List[str]
