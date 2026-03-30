@@ -88,3 +88,18 @@ class ListeningEvaluationResponse(BaseModel):
     assigned_level: str # A1, A2, B1, B2
     correct_answers: List[str]
     message: str
+
+class SpeakingEvaluationResponse(BaseModel):
+    transcript: str
+    score: float
+    assigned_level: str
+    feedback: str
+    fluency_score: Optional[float] = None
+
+class FinalResultsResponse(BaseModel):
+    global_level: str
+    level_name: str
+    scores: Dict[str, float]
+    ai_analysis: str
+    suggested_plan: str
+    next_steps: List[Dict[str, str]]
