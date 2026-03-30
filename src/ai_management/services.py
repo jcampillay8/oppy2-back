@@ -2,16 +2,17 @@
 import asyncio
 import logging
 import json
-
+import time
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from json_repair import repair_json as repair
 
 from .client import call_gemini_api
-from .models import LLMRequestLog, AIModelConfig
+from .models import LLMRequestLog, AIModelConfig, AudioServiceConfig, AudioRequestLog
 from .schemas import AIResponse
+from .audio_client import tts_client
 
 logger = logging.getLogger(__name__)
 
@@ -122,3 +123,67 @@ def _fallback_message(expect_json: bool) -> str:
             "feedback": "Error de conexión con el evaluador."
         })
     return "Lo siento, tuve un problema técnico. Por favor intenta de nuevo en unos momentos."
+
+
+async def generate_oppy_voice(
+    db: AsyncSession,
+    text: str,
+    user_id: int,
+    caller: str,
+    voice_key: str = "us_female"
+) -> bytes:
+    """
+    Genera audio, calcula el costo basado en caracteres y registra en DB.
+    """
+    start_time = time.monotonic()
+    
+    # 1. Obtener configuración de precio (Data-Driven)
+    stmt = select(AudioServiceConfig).where(
+        AudioServiceConfig.service_name == "google_tts_standard",
+        AudioServiceConfig.is_active == True
+    )
+    
+    try:
+        result = await db.execute(stmt)
+        cfg = result.scalar_one_or_none()
+        
+        # Fallback de precio si no hay config en DB ($4.0 por 1M chars)
+        price_per_million = cfg.price_per_million if cfg else 4.0
+        price_per_char = price_per_million / 1_000_000
+
+        # 2. Generar audio con el cliente
+        audio_content = await tts_client.synthesize(text, voice_key)
+        
+        # 3. Registrar éxito y costo
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        char_count = len(text)
+        
+        log = AudioRequestLog(
+            user_id=user_id,
+            caller=caller,
+            service_name="google_tts_standard",
+            input_units=char_count,
+            estimated_cost=char_count * price_per_char,
+            request_duration_ms=duration_ms,
+            api_success=True,
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None)
+        )
+        db.add(log)
+        await db.commit()
+        
+        return audio_content
+
+    except Exception as e:
+        logger.error(f"❌ Error en TTS Service: {e}")
+        # Log de error para auditoría
+        log = AudioRequestLog(
+            user_id=user_id,
+            caller=caller,
+            service_name="google_tts_standard",
+            api_success=False,
+            request_duration_ms=0,
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None)
+        )
+        db.add(log)
+        await db.commit()
+        return b""

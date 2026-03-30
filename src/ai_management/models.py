@@ -45,3 +45,31 @@ class AIModelConfig(BaseModel):
     output_price_per_million: Mapped[float] = mapped_column(Float)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+
+class AudioServiceConfig(BaseModel):
+    """Configuración de precios para TTS (Google, Azure, etc.) y STT (Whisper)."""
+    __tablename__ = "audio_service_configs"
+    __table_args__ = {'schema': settings.DB_SCHEMA}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    service_name: Mapped[str] = mapped_column(String(100), unique=True) # ej: google_tts_standard
+    unit_type: Mapped[str] = mapped_column(String(50), default="characters") # characters o seconds
+    price_per_million: Mapped[float] = mapped_column(Float) # ej: 4.0 para Standard
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+class AudioRequestLog(BaseModel):
+    """Log de auditoría para consumo de Audio (TTS/STT)."""
+    __tablename__ = "audio_request_log"
+    __table_args__ = {'schema': settings.DB_SCHEMA}
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey(f"{settings.DB_SCHEMA}.users.id"), nullable=True)
+    
+    caller: Mapped[str] = mapped_column(String(255)) # ej: "onboarding_listening"
+    service_name: Mapped[str] = mapped_column(String(100))
+    input_units: Mapped[int] = mapped_column(default=0) # caracteres enviados
+    estimated_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    
+    request_duration_ms: Mapped[int] = mapped_column(Integer)
+    api_success: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))

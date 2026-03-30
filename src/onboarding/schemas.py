@@ -61,3 +61,30 @@ class WritingEvaluationResponse(BaseModel):
 
 class ReadingSubmission(BaseModel):
     answers: List[str]
+
+
+class ListeningQuestion(BaseModel):
+    """Estructura de una pregunta individual dentro del test"""
+    id: int
+    question_text: str
+    options: List[Dict[str, str]] # Ejemplo: [{"id": "A", "text": "Option..."}, ...]
+
+class ListeningTaskResponse(BaseModel):
+    """Lo que el router entrega al Frontend (con el audio)"""
+    title: str
+    script: str # Opcional: podrías ocultarlo si no quieres que lo lean mientras escuchan
+    questions: List[Dict] # Estructura completa de preguntas y opciones
+    audio_base64: str
+    mime_type: str = "audio/mp3"
+
+class ListeningSubmission(BaseModel):
+    """Lo que el usuario envía desde Flutter para ser evaluado"""
+    # Lista de strings con las respuestas del usuario, ej: ["A", "C", "B"]
+    answers: List[str] = Field(..., min_items=1, max_items=5) 
+
+class ListeningEvaluationResponse(BaseModel):
+    """Resultado final de la sección de Listening"""
+    score: float
+    assigned_level: str # A1, A2, B1, B2
+    correct_answers: List[str]
+    message: str
