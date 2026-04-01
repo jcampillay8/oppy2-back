@@ -86,3 +86,5 @@ class ListeningTestService:
 
     def _get_fallback_task(self) -> Dict[str, Any]:
         return {"title": "Professional Life", "script": "Hello, I am an engineer...", "questions": []}
+
+listening_service = ListeningTestService()

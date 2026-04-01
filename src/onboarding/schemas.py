@@ -1,6 +1,6 @@
 # src/onboarding/schemas.py
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 
 # --- SCHEMAS EXISTENTES (Perfil) ---

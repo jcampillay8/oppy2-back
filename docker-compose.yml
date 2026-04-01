@@ -18,7 +18,6 @@ services:
     volumes:
       - .:/app
       - ./profiles:/app/profiles
-      - ./google_credentials.json:/app/google_credentials.json
     depends_on:
       chat-postgres:
         condition: service_healthy # 👈 Espera a que Postgres esté LISTO

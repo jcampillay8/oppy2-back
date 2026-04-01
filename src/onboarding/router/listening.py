@@ -69,20 +69,43 @@ async def get_listening_question(
 
 @router.post("/listening/evaluate")
 async def evaluate_listening(
-    payload: schemas.ListeningSubmission, # Asegúrate de crear este schema similar al de Reading
+    payload: schemas.ListeningSubmission, 
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user)
 ):
-    # Lógica de recuperación de detail (idéntica a Reading)
-    # ... (omitido por brevedad, recupera el PlacementTestDetail de 'listening')
+    # 1. Recuperar el PlacementTest del usuario
+    test_stmt = select(PlacementTest).where(PlacementTest.user_id == current_user.id)
+    result = await db.execute(test_stmt)
+    placement_test = result.scalar_one_or_none()
     
+    if not placement_test:
+        raise HTTPException(status_code=404, detail="Placement test record not found.")
+
+    # 2. Recuperar el detalle de la sección 'listening'
+    detail_stmt = select(PlacementTestDetail).where(
+        PlacementTestDetail.placement_test_id == placement_test.id,
+        PlacementTestDetail.section == "listening"
+    )
+    detail_result = await db.execute(detail_stmt)
+    detail = detail_result.scalar_one_or_none() # <--- AQUÍ SE DEFINE 'detail'
+
+    if not detail:
+        raise HTTPException(status_code=404, detail="Listening test details not found.")
+
+    # 3. Ahora sí, 'detail' existe y puedes usarlo
     stored_task = json.loads(detail.question_text)
+    
+    # Extraer las respuestas correctas guardadas anteriormente
     correct_answers = [q['correct_option'] for q in stored_task['questions']]
     
+    # 4. Calcular nivel (Usando tu servicio)
     evaluation = listening_service.calculate_listening_level(payload.answers, correct_answers)
     
+    # 5. Persistir resultados
     detail.user_response = json.dumps(payload.answers)
     detail.score = evaluation["score"]
+    
+    # Actualizar el score global en el test principal
     placement_test.listening_result = evaluation["score"]
     
     await db.commit()
