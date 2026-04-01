@@ -21,19 +21,15 @@ async def get_user_onboarding_status(db: AsyncSession, user: User) -> dict:
     if not user.bio or len(user.bio.strip()) < 5:
         return {"needs_onboarding": True, "current_step": 3, "target_language": None}
 
-    # 2. Validar Selección de Idioma (Banderas)
     result = await db.execute(select(PlacementTest).where(PlacementTest.user_id == user.id))
     test_record = result.scalars().first()
 
     if not test_record:
-        # Perfil completo (Vistas 1,2,3), ahora a la Vista 4 (Banderas)
         return {"needs_onboarding": True, "current_step": 4, "target_language": None}
 
-    # 3. Validar Test (Vista 5)
     if not test_record.is_completed:
         return {"needs_onboarding": True, "current_step": 5, "target_language": test_record.target_language}
 
-    # 4. Finalizado
     return {"needs_onboarding": False, "current_step": 6, "target_language": test_record.target_language}
 
 async def update_onboarding_data(db: AsyncSession, user: User, data: schemas.OnboardingProfileUpdate):
@@ -53,11 +49,11 @@ async def update_onboarding_data(db: AsyncSession, user: User, data: schemas.Onb
         await db.commit()
         await db.refresh(user)
         
-        logger.info(f"SUCCESS: Usuario {user.id} actualizado en DB")
+        logger.info(f"AFTER REFRESH: username='{user.username}', email='{user.email}', occupation='{user.occupation}', bio='{user.bio}'")
         
-        # 🚨 LA CLAVE: Retornamos el diccionario de estado que espera el schema
-        # Esto llamará a tu lógica de 'if not user.username return step 1...'
         status = await get_user_onboarding_status(db, user)
+        
+        logger.info(f"STATUS RESULT: {status}")
         return status
 
     except Exception as e:

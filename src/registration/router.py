@@ -1,9 +1,9 @@
 # src/registration/router.py
+import uuid
 import logging
 from fastapi import APIRouter, Depends, Form, File, UploadFile, HTTPException, status
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from src.config import settings
 from src.database import get_async_session
 from src.registration import services as reg_services  # módulo
@@ -20,14 +20,15 @@ account_router = APIRouter(tags=["Account Management"])
 )
 async def register_user(
     db_session: AsyncSession = Depends(get_async_session),
-    first_name: str = Form(..., max_length=50),
-    last_name: str = Form(..., max_length=50),
-    username: str = Form(..., min_length=3, max_length=50),
+    first_name: str = Form(default="", max_length=50),  # ← opcional
+    last_name: str = Form(default="", max_length=50),   # ← opcional
     email: str = Form(..., max_length=100),
     password: str = Form(..., min_length=8),
     terms_accepted: bool = Form(...),
-    user_image: UploadFile | None = File(None, description="Profile image of the user"),
+    user_image: UploadFile | None = File(None),
 ):
+    username = email.lower()
+    
     user_data = UserRegisterSchema(
         first_name=first_name,
         last_name=last_name,
@@ -62,7 +63,7 @@ async def register_user(
         uploaded_image=user_image,
     )
 
-from fastapi.responses import RedirectResponse
+
 
 @account_router.get("/confirm-email/{token}")
 async def confirm_email(
