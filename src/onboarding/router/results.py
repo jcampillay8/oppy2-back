@@ -1,4 +1,5 @@
 # src/onboarding/router/results.py
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -49,6 +50,7 @@ async def get_final_status(
     # 4. Actualizar el estado del test en la base de datos
     test.suggested_level = global_level
     test.is_completed = True
+    test.completed_at = datetime.now(timezone.utc)  # ← agregar esto
     await db.commit()
 
     # Mapeo amigable para el nombre del nivel en la UI de Flutter
