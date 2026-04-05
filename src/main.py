@@ -98,15 +98,23 @@ add_pagination(app)
 @app.on_event("startup")
 async def startup():
     logger.info(f"🚀 OppyChat API arrancando en modo: {settings.ENVIRONMENT}")
-    # Mantenemos la conexión a Redis para otras funciones (como caché)
-    # pero saltamos la inicialización del Limiter por ahora.
+    
+    # Construir URL de Redis con contraseña si existe
+    if settings.REDIS_PASSWORD:
+        redis_url = f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    else:
+        redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+
     try:
-        redis = aioredis.Redis(connection_pool=redis_pool)
-        await redis.ping()
-        logger.info("✅ Conexión a Redis exitosa")
-        # await FastAPILimiter.init(redis) # 🛑 Saltamos esto temporalmente
+        # Usamos el cliente asíncrono para verificar la conexión
+        redis_client = aioredis.from_url(redis_url, encoding="utf8", decode_responses=True)
+        await redis_client.ping()
+        logger.info(f"✅ Conexión a Redis exitosa en {settings.REDIS_HOST}")
+        # Aquí podrías guardar el cliente en app.state si lo necesitas globalmente
+        app.state.redis = redis_client 
     except Exception as e:
-        logger.error(f"❌ Error conectando a Redis: {e}")
+        logger.error(f"❌ Error crítico conectando a Redis: {e}")
+        # En desarrollo podrías dejarlo pasar, en producción quizás quieras que falle
 
 @app.on_event("shutdown")
 async def shutdown_event():

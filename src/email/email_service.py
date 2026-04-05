@@ -1,31 +1,45 @@
+# src/email/email_service.py
 import os
 import logging
 import httpx
+import builtins  # <--- Nuevo
 from typing import Dict, Any, List, Optional
-from pydantic import EmailStr
+from pydantic import EmailStr, SecretStr
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound
-from fastapi_mail import FastMail, ConnectionConfig, MessageSchema, MessageType
-from fastapi.encoders import jsonable_encoder
 
+# --- HACK DE COMPATIBILIDAD PARA FASTAPI-MAIL ---
+# Esto inyecta SecretStr en el scope global para evitar el NameError interno de la librería
+if not hasattr(builtins, "SecretStr"):
+    setattr(builtins, "SecretStr", SecretStr)
+# -----------------------------------------------
+
+from fastapi_mail import FastMail, ConnectionConfig, MessageSchema, MessageType
 from src.config import settings
 
 log = logging.getLogger(__name__)
 
-# Configuración de rutas de plantillas
+# Configuración de rutas
 current_dir = os.path.dirname(os.path.abspath(__file__))
 templates_path = os.path.normpath(os.path.join(current_dir, '..', 'templates', 'emails'))
 
-# Configuración Global desde Settings
 PROVIDER = (getattr(settings, "EMAIL_PROVIDER", "smtp")).lower()
 EMAIL_FROM = settings.email_from_resolved
-RESEND_API_KEY = settings.RESEND_API_KEY.get_secret_value() if settings.RESEND_API_KEY else None
 
-# Configuración SMTP para FastMail
+# Extraer valores de SecretStr de Pydantic para evitar errores de tipo en la config
+def get_secret(value: Any) -> str | None:
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    return value
+
+RESEND_API_KEY = get_secret(settings.RESEND_API_KEY)
+
+# Configuración SMTP
 smtp_conf = None
 if PROVIDER == "smtp":
     smtp_conf = ConnectionConfig(
         MAIL_USERNAME=settings.MAIL_USERNAME,
-        MAIL_PASSWORD=settings.MAIL_PASSWORD,
+        # Importante: Pasar el valor real si es SecretStr
+        MAIL_PASSWORD=get_secret(settings.MAIL_PASSWORD), 
         MAIL_FROM=settings.MAIL_FROM,
         MAIL_PORT=settings.MAIL_PORT,
         MAIL_SERVER=settings.MAIL_SERVER,
@@ -41,10 +55,9 @@ class EmailService:
     def __init__(self):
         self.provider = PROVIDER
         self.template_env = Environment(loader=FileSystemLoader(templates_path))
-        if self.provider == "smtp":
+        if self.provider == "smtp" and smtp_conf:
             self.fm = FastMail(smtp_conf)
         log.info("EmailService iniciado [Modo: %s]", self.provider)
-
     def _render_template(self, template_name: str, template_vars: Dict[str, Any] | None) -> str:
         try:
             template = self.template_env.get_template(template_name)

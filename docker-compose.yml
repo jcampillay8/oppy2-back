@@ -6,12 +6,13 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: chat-backend
-    tty: true  # 👈 Mantiene el contenedor abierto para debug
+    tty: true
     stdin_open: true
     env_file:
       - .env
     environment:
       - ENVIRONMENT=development
+      - PYTHONPATH=/app
       - GOOGLE_APPLICATION_CREDENTIALS=/app/google_credentials.json
     ports:
       - "8000:8000"
@@ -20,15 +21,16 @@ services:
       - ./profiles:/app/profiles
     depends_on:
       chat-postgres:
-        condition: service_healthy # 👈 Espera a que Postgres esté LISTO
+        condition: service_healthy
       chat-redis:
         condition: service_started
     networks:
       - chat-net
-    # Modificamos el comando para que no explote si no hay migraciones pendientes
+    # Corregido: Eliminada la duplicación y mejorada la cadena de comandos
     command: >
-      sh -c "alembic upgrade head || echo 'Migraciones fallidas o no encontradas, iniciando app de todas formas...' &&
-             uvicorn src.main:app --host=0.0.0.0 --port=8000 --proxy-headers --reload --log-level debug"
+      sh -c "alembic upgrade head; 
+             echo '✅ Migraciones procesadas. Iniciando servidor OppyChat...';
+             uvicorn src.main:app --host 0.0.0.0 --port 8000 --proxy-headers --reload --log-level debug"
 
   chat-postgres:
     image: postgres:15-alpine
@@ -37,10 +39,10 @@ services:
     environment:
       POSTGRES_USER: ${DB_USER:-jcampillay}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-BTC.100K.jc}
-      POSTGRES_DB: ${DB_NAME:-OppyChat}
+      POSTGRES_DB: ${DB_NAME:-oppychat2}
     ports:
       - "5442:5432"
-    healthcheck: # 👈 Vital para que el backend no intente conectar antes de tiempo
+    healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
@@ -58,6 +60,7 @@ services:
       - "6379:6379"
     networks:
       - chat-net
+    # Importante: Redis usará la clave del .env o la default si no existe
     command: redis-server --requirepass ${REDIS_PASSWORD:-oppy_secret_pass}
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-oppy_secret_pass}
@@ -73,6 +76,8 @@ services:
       - "7070:80"
     networks:
       - chat-net
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
     depends_on:
       - chat-postgres
 

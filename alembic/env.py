@@ -14,13 +14,14 @@ from alembic import context
 from alembic.script import ScriptDirectory
 from alembic.runtime.environment import EnvironmentContext
 
-# 1. Configuración de rutas e imports de la app
+# ⭐ 1. AÑADE ESTAS LÍNEAS (Configuración y Base) ⭐
 from src.config import get_settings
 from src.database import BaseModel
 
-# --- IMPORTACIÓN DE TODOS LOS MODELOS ---
-# Es CRUCIAL importar todos para que Alembic detecte los cambios
+# 2. Importamos la base y los modelos core
 from src.models import User, Chat, Message
+
+# 3. Modelos de autenticación
 from src.authentication.models import (
     UserSessionHistory, 
     PasswordResetToken, 
@@ -28,6 +29,12 @@ from src.authentication.models import (
     EmailConfirmationToken
 )
 
+# 4. Modelos de Chat
+from src.chat.models import ChatFact, UserMessageCorrection, OppyHostAvatarProfile
+
+# 5. Otros módulos
+from src.avatars.models import AvatarDefinition
+from src.learning_analysis.models import AnalysisCategory, LearningFocus, FocusInstance
 # --- CONFIGURACIÓN DE LOGGING Y ENGINE ---
 current_settings = get_settings()
 fileConfig(context.config.config_file_name)

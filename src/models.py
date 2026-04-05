@@ -74,6 +74,13 @@ class User(BaseModel):
     email_confirmation_tokens: Mapped[List["EmailConfirmationToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     password_reset_tokens: Mapped[List["PasswordResetToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
+    # --- Relación con Avatares ---
+    avatar_definitions: Mapped[List["AvatarDefinition"]] = relationship(
+        "AvatarDefinition", 
+        back_populates="user", 
+        cascade="all, delete-orphan"
+    )
+
     # --- Nueva Relación Onboarding ---
     placement_tests: Mapped[List["PlacementTest"]] = relationship(
         "PlacementTest", 
@@ -125,6 +132,16 @@ class Chat(BaseModel):
 
     users: Mapped[List["User"]] = relationship(secondary=user_chat, back_populates="chats")
     messages: Mapped[List["Message"]] = relationship(back_populates="chat")
+
+    # --- VÍNCULO CON EL AVATAR SELECCIONADO ---
+    # Es Optional porque un chat podría ser genérico o previo a la selección
+    avatar_definition_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(f"{settings.DB_SCHEMA}.avatar_definitions.id"), 
+        nullable=True
+    )
+    avatar_definition: Mapped[Optional["AvatarDefinition"]] = relationship(
+        back_populates="chats"
+    )
     
     is_tts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     selected_voice: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -146,3 +163,5 @@ class ReadStatus(RemoveBaseFieldsMixin, BaseModel):
 
 from src.onboarding.models import PlacementTest
 from src.ai_management.models import LLMRequestLog
+from src.avatars.models import AvatarDefinition
+from src.chat.models import ChatFact, UserMessageCorrection
