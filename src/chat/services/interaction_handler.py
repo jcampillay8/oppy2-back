@@ -35,14 +35,79 @@ class InteractionHandler:
     def __init__(self, db: AsyncSession, user: User):
         self.db = db
         self.user = user
+        # Nota: Asegúrate de que MessageService y ReadStatusService acepten solo 'db' en su __init__
         self.msg_service = MessageService(db)
         self.read_service = ReadStatusService(db)
 
-    # ... (el método process_interaction_by_guid se mantiene igual) ...
+    async def process_interaction_by_guid(
+        self, 
+        chat_guid: uuid.UUID, 
+        user_message_content: str
+    ) -> Tuple[Message, Message, Optional[Dict[str, Any]]]:
+        """
+        Orquestador principal:
+        1. Busca el chat y valida.
+        2. Guarda mensaje del usuario.
+        3. Ejecuta pipeline de corrección y aprendizaje.
+        4. Genera respuesta de la IA (Avatar).
+        """
+        # 1. Buscar el Chat con su definición de avatar
+        stmt = select(Chat).where(Chat.guid == chat_guid).options(
+            selectinload(Chat.avatar_definition)
+        )
+        result = await self.db.execute(stmt)
+        chat = result.scalar_one_or_none()
+
+        if not chat:
+            raise ValueError("Chat not found")
+
+        # 2. Guardar mensaje del Usuario
+        user_msg = await self.msg_service.create_message(
+            chat_id=chat.id,
+            user_id=self.user.id,
+            role=MessageRole.USER,
+            content=user_message_content
+        )
+        await self.db.flush() # Para tener el ID de user_msg
+
+        # 3. Pipeline de Corrección (Gramática, Score, Hechos)
+        # Usamos el idioma preferido del avatar o inglés por defecto
+        lang = chat.avatar_definition.language_preference if chat.avatar_definition else "en-US"
+        feedback = await self._run_correction_pipeline(user_msg, lang)
+
+        # 4. Generar respuesta de la IA (Sarah Pearson)
+        bot_response_text = await generate_avatar_response(
+            db=self.db,
+            chat=chat,
+            user_id=self.user.id,
+            user_message=user_message_content
+        )
+
+        bot_msg = await self.msg_service.create_message(
+            chat_id=chat.id,
+            user_id=self.user.id,
+            role=MessageRole.ASSISTANT,
+            content=bot_response_text
+        )
+
+        # 5. Actualizar estado de lectura
+        await self.read_service.mark_chat_as_read(chat_id=chat.id, user_id=self.user.id)
+
+        return user_msg, bot_msg, feedback
 
     async def _run_correction_pipeline(self, user_msg: Message, language: str) -> Optional[Dict[str, Any]]:
-        """Analiza gramática, score y diferencias."""
+        """Analiza gramática, hechos semánticos, score y aprendizaje."""
         try:
+            # 🚀 PASO 0: EXTRACCIÓN DE HECHOS (Esto llenará chat_facts)
+            # Se hace antes para que Sarah pueda usar esta info en su respuesta inmediata
+            await process_and_store_semantic_facts(
+                db=self.db,
+                text=user_msg.content,
+                user_id=self.user.id,
+                chat_id=user_msg.chat_id,
+                message_id=user_msg.id
+            )
+
             # 1. Obtener corrección de texto
             corrected_text = await correct_user_message(
                 db=self.db,

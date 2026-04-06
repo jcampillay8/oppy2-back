@@ -91,6 +91,7 @@ async def get_user_chat_list(
         final_list.append(BotChatOutSchema(
             guid=chat.guid,
             title=chat.title,
+            createdAt=chat.created_at, 
             updated_at=chat.updated_at,
             new_messages_count=unread_count,
             last_message=preview

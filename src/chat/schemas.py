@@ -48,9 +48,19 @@ class MessageOut(BaseModel):
     role: str
     content: str
     created_at: datetime
-    is_read: bool
+    # ✅ Cambio: Agregamos un valor por defecto para evitar el error "Field required"
+    is_read: bool = False 
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+    model_config = ConfigDict(
+        alias_generator=to_camel, 
+        populate_by_name=True, 
+        from_attributes=True
+    )
+
+class MessageCreate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=2000)
+    
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 # ==========================================
 # 3. ESQUEMAS DE WEBSOCKET (TIEMPO REAL)

@@ -1,18 +1,4 @@
-LABELS = [
-    "direct family relationship",
-    "proper noun of a person, animal, place, or named entity",
-    "characteristic or quality (adjective)",
-    "action or event that is happening, happened, or will happen",
-    "geographical or spatial location",
-    "generic personal reference",
-    "speaker's intention or goal",
-    "subjective judgment or feeling",
-    "problem or difficulty that requires a solution",
-    "tangible object or material item",
-    "name of an organization or team",
-    "specific temporal reference"
-]
-
+# src/avatars/config.py
 LABEL_TO_FACT_TYPE = {
     "direct family relationship": "relationship",
     "proper noun of a person, animal, place, or named entity": "named_entity",
@@ -27,6 +13,8 @@ LABEL_TO_FACT_TYPE = {
     "name of an organization or team": "organization",
     "specific temporal reference": "time_reference",
 }
+
+LABELS = list(LABEL_TO_FACT_TYPE.keys())
 
 # Mapeo simple (podrías tener un mapeo más robusto si manejas muchos idiomas)
 LANGUAGE_MAP = {

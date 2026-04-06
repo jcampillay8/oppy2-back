@@ -3,13 +3,11 @@ from fastapi import APIRouter
 from .rest_endpoints import router as rest_router
 from .websocket_router import router as ws_router
 
-# Creamos el router principal del módulo de chat
-chat_router = APIRouter()
+# Definimos el router principal con el TAG que quieres ver en Swagger
+chat_router = APIRouter(prefix="/chats", tags=["Chat Management"])
 
-# Incluimos los sub-routers (REST y WebSocket)
-# Esto hará que las rutas de cada uno se sumen a chat_router
+# Al incluir los sub-routers, heredan el prefijo /chats
 chat_router.include_router(rest_router)
-chat_router.include_router(ws_router)
+chat_router.include_router(ws_router, prefix="/ws")
 
-# Exponemos explícitamente chat_router para que src/routers.py lo encuentre
 __all__ = ["chat_router"]

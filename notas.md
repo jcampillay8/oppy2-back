@@ -14,9 +14,9 @@ http://localhost:8000/confirm-email/1ifqiKUE6WsBJwDDfgVItwrwOWJ1V5OdKvc0iEwBW2w
 
 # ALEMBIC
 
-docker exec -it chat-backend alembic revision --autogenerate -m "add placementtest"
+docker exec -it chat-backend alembic revision --autogenerate -m "add AvatarDefinitionTranslation"
 
-> docker exec -it chat-backend alembic upgrade head
+docker exec -it chat-backend alembic upgrade head
 
 
 

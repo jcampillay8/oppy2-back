@@ -43,3 +43,31 @@ class AvatarDefinition(BaseModel):
     translations: Mapped[List["AvatarDefinitionTranslation"]] = relationship(
         back_populates="avatar_definition_main", cascade="all, delete-orphan"
     )
+
+class AvatarDefinitionTranslation(BaseModel):
+    __tablename__ = "avatar_definition_translations"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    
+    # FK actualizada a avatar_definitions
+    avatar_definition_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("avatar_definitions.id"), nullable=False, index=True
+    )
+    
+    language_code: Mapped[str] = mapped_column(String(10), nullable=False) # Ej. 'es', 'pt'
+
+    # Campos traducidos
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    role_avatar: Mapped[str] = mapped_column(String(500), nullable=False)
+    role_usuario: Mapped[str] = mapped_column(String(255), nullable=False)
+    objective: Mapped[str] = mapped_column(String(500), nullable=False)
+    context: Mapped[str] = mapped_column(Text, nullable=False)
+    character_traits: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rules: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Relación de vuelta
+    avatar_definition_main: Mapped["AvatarDefinition"] = relationship(
+        back_populates="translations"
+    )

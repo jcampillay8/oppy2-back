@@ -48,6 +48,7 @@ async def create_avatar_definition(db: AsyncSession, user_id: int, avatar_data) 
         user_id=user_id,
         name=avatar_data.name,
         role_avatar=avatar_data.role_avatar, # Corregido: role_bot -> role_avatar
+        role_usuario=avatar_data.role_usuario,
         objective=avatar_data.objective,
         context=avatar_data.context,
         character_traits=avatar_data.character_traits,
@@ -88,26 +89,31 @@ async def update_avatar_definition(db: AsyncSession, avatar_guid: uuid.UUID, use
 
 async def create_avatar_chat_session(db: AsyncSession, user_id: int, avatar: AvatarDefinition) -> Chat:
     """Crea la entidad Chat y el primer mensaje 'in-character'."""
-    # Corregido el nombre de la función de prompt_builder
+    # Generamos el prompt dinámico basado en la definición del avatar
     system_prompt = build_system_prompt_from_avatar_definition(avatar)
     
     new_chat = Chat(
         guid=uuid.uuid4(),
         title=f"Conversación con {avatar.name}",
         system_prompt=system_prompt,
-        avatar_definition_guid=avatar.guid,
+        # ⭐ CAMBIO CLAVE AQUÍ ⭐
+        # Usamos 'avatar_definition_id' porque el modelo Chat ahora espera el ID (int)
+        avatar_definition_id=avatar.id, 
         is_tts_enabled=avatar.is_tts_enabled,
         selected_voice=avatar.selected_voice,
     )
     db.add(new_chat)
+    
+    # Flush para obtener el ID de new_chat antes de usarlo en las relaciones
     await db.flush()
 
-    # Asociación Many-to-Many
+    # Asociación Many-to-Many en la tabla intermedia user_chat
     await db.execute(user_chat.insert().values(user_id=user_id, chat_id=new_chat.id))
 
-    # Generar el mensaje de apertura
+    # Generar el mensaje de apertura usando el LLM
     initial_content = await generate_avatar_opening_message(db, user_id, avatar)
     
+    # Crear el primer mensaje del historial
     initial_msg = Message(
         chat_id=new_chat.id,
         user_id=user_id, 
@@ -115,6 +121,7 @@ async def create_avatar_chat_session(db: AsyncSession, user_id: int, avatar: Ava
         content=initial_content,
     )
     db.add(initial_msg)
+    
     return new_chat
 
 async def reset_avatar_conversation(db: AsyncSession, user_id: int, avatar_guid: uuid.UUID) -> Chat:
@@ -164,7 +171,7 @@ async def generate_avatar_opening_message(db: AsyncSession, user_id: int, avatar
     
     instruction = (
         f"Genera el mensaje de apertura para una nueva conversación. "
-        f"Debes presentarte según tu rol: {avatar.role_avatar}. " # Corregido field
+        f"Debes presentarte según tu rol: {avatar.role_avatar}. "
         f"No saludes de forma genérica; entra directamente en tu personaje. "
         f"Idioma: {avatar.language_preference}. Máximo 2 frases."
     )
@@ -174,12 +181,13 @@ async def generate_avatar_opening_message(db: AsyncSession, user_id: int, avatar
         {"role": "user", "content": "Inicia la conversación."}
     ]
 
+    # ⭐ AJUSTE FINAL: Pasamos 'caller' como argumento posicional ⭐
+    # Según el error, la función lo exige. Lo ponemos justo después de los básicos.
     response = await ask_llm(
         messages=messages,
         db=db,
-        max_tokens=100,
-        caller="avatar_opener",
-        user_id=user_id
+        user_id=user_id,
+        caller="avatar_opener"  # Probamos pasándolo así de nuevo, si falla es porque va en otra posición
     )
     return _ensure_string(response)
 

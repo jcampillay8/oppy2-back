@@ -16,7 +16,8 @@ from src.avatars.models import AvatarDefinition
 from src.chat.schemas import (
     AvatarChatOutSchema, # Antes ChatOut
     MessageOut, 
-    GetBotChatsResponse
+    GetBotChatsResponse,
+    MessageCreate
 )
 # Nota: Si ChatCreate y ChatWithMessages no existen en tu schemas.py, 
 # deberás definirlos o usar los nombres correctos.
@@ -100,29 +101,30 @@ async def get_chat_messages(
 @router.post("/{chat_guid}/messages/")
 async def send_message_rest(
     chat_guid: UUID,
-    content: str, 
+    message_data: MessageCreate,
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ):
-    # ✅ CORRECCIÓN: Usar el InteractionHandler con el pipeline completo
     handler = InteractionHandler(db, current_user)
     
     try:
-        # Usamos el método que orquestra Hechos + IA + Correcciones
+        # ✅ USAMOS EL NOMBRE CORRECTO: process_interaction_by_guid
         user_msg, bot_msg, feedback = await handler.process_interaction_by_guid(
             chat_guid=chat_guid,
-            user_message_content=content
+            user_message_content=message_data.content
         )
         
         await db.commit()
 
-        # Opcional: Recargar el chat para devolver el estado actualizado si es necesario
         return {
-            "messages": [MessageOut.model_validate(user_msg), MessageOut.model_validate(bot_msg)],
+            "messages": [
+                MessageOut.model_validate(user_msg), 
+                MessageOut.model_validate(bot_msg)
+            ],
             "feedback": feedback
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Error in send_message_rest: {e}")
+        logger.error(f"Error in send_message_rest: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error processing interaction")

@@ -31,22 +31,28 @@ def _ensure_string(llm_response_raw) -> str:
 
 async def generate_avatar_response(
     db: AsyncSession,
-    user_message_content: str,
-    chat_id: int,
+    chat: any,              # Recibe el objeto Chat completo desde el Handler
     user_id: int,
-    facts: List[ChatFact],
-    chat_history: List[Dict[str, str]],
-    avatar,  # AvatarDefinition object
-    system_prompt_override: Optional[str] = None
+    user_message: str,      # Coincide con el nombre enviado por el Handler
+    facts: List[ChatFact] = [],
+    chat_history: List[Dict[str, str]] = [],
+    system_prompt_override: Optional[str] = None,
+    **kwargs                # Por si acaso el Handler envía chat_id u otros extras
 ) -> str:
     """
     Orquesta la generación de la respuesta del Avatar usando RAG (facts) y su personalidad.
     """
+    
+    # 0. Extraer el Avatar del objeto Chat
+    # Esto es vital porque el Handler envía el objeto Chat, no el Avatar directamente
+    avatar = chat.avatar_definition 
+
     # 1. Construir el contexto de hechos conocidos (RAG)
     context = build_fact_context(facts)
 
     # 2. Obtener la base de personalidad del Avatar
-    base_avatar_prompt = build_system_prompt_from_avatar(avatar)
+    # NOTA: Asegúrate de que esta función se llame así o build_system_prompt_from_avatar_definition
+    base_avatar_prompt = build_system_prompt_from_avatar_definition(avatar)
 
     # 3. Ensamblar el System Prompt Final
     final_system_prompt = (
@@ -64,19 +70,20 @@ async def generate_avatar_response(
     # 4. Preparar el historial de mensajes para el LLM
     messages = [{"role": "system", "content": final_system_prompt}]
     messages.extend(chat_history)
-    messages.append({"role": "user", "content": user_message_content})
+    messages.append({"role": "user", "content": user_message})
 
-    # 5. Determinar tokens según formato (Short, Normal, Long)
+    # 5. Determinar tokens según formato
     format_pref = str(avatar.output_format_preference).lower() if hasattr(avatar, 'output_format_preference') else "normal"
-    max_tokens = OUTPUT_FORMAT_MAX_TOKENS.get(format_pref, 300)
+    # Si no tienes definida la constante OUTPUT_FORMAT_MAX_TOKENS, la definimos aquí rápido:
+    max_tokens = {"short": 150, "normal": 300, "long": 600}.get(format_pref, 300)
 
-    # 6. Llamar al LLM
+    # 6. Llamar al LLM (Asegúrate de que ask_llm tenga **kwargs en su definición)
     response_raw = await ask_llm(
-        messages=messages,
         db=db,
-        max_tokens=max_tokens,
-        caller="avatar_response_generator",
+        messages=messages,
         user_id=user_id,
+        caller="avatar_response_generator",
+        max_tokens=max_tokens,
         output_format_pref=format_pref
     )
 
@@ -104,6 +111,7 @@ async def process_and_store_semantic_facts(
         f"Respond ONLY in JSON: {{\"relevant_labels\": []}}"
     )
     
+    relevant_labels = [] # Inicialización de seguridad
     try:
         class_res_raw = await ask_llm(
             messages=[
@@ -118,14 +126,22 @@ async def process_and_store_semantic_facts(
         )
         
         class_str = _ensure_string(class_res_raw)
-        # Limpieza de markdown si el LLM lo incluye
-        if "```json" in class_str:
-            class_str = class_str.split("```json")[1].split("```")[0].strip()
+
+        # ✅ MEJORA: Limpieza robusta de JSON (Markdown safe)
+        if "```" in class_str:
+            # Extraemos lo que esté entre los bloques de código o el último bloque
+            class_str = class_str.split("```")[-2].replace("json", "").strip()
         
-        relevant_labels = json.loads(class_str).get("relevant_labels", [])
+        # ✅ MEJORA: Try/Except específico para el parseo de JSON
+        try:
+            data = json.loads(class_str)
+            relevant_labels = data.get("relevant_labels", [])
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse LLM JSON classification: {class_str}")
+            relevant_labels = []
+
     except Exception as e:
         logger.error(f"Error classifying labels: {e}")
-        relevant_labels = []
 
     extracted_facts = []
 
@@ -144,13 +160,18 @@ async def process_and_store_semantic_facts(
 
         extraction_system = (
             f"You are an expert fact extractor. Extract or merge the fact of type '{fact_type}'. "
-            f"Existing info: '{existing_val}'. New text: '{text}'. "
+            f"Existing info: '{existing_val}'. "
             f"Respond ONLY with the merged concise fact or '[NO_FACT]'."
         )
 
         try:
+            # ✅ CORRECCIÓN: Agregamos el mensaje del usuario con el texto a analizar 
+            # para evitar el error "contents must not be empty"
             fact_res_raw = await ask_llm(
-                messages=[{"role": "system", "content": extraction_system}],
+                messages=[
+                    {"role": "system", "content": extraction_system},
+                    {"role": "user", "content": f"New text to analyze: '{text}'"} 
+                ],
                 db=db,
                 max_tokens=100,
                 caller="fact_extractor",
@@ -161,9 +182,11 @@ async def process_and_store_semantic_facts(
 
             if fact_val and fact_val != "[NO_FACT]":
                 if existing_obj:
+                    # ✅ Actualización de hecho existente
                     existing_obj.fact_value = fact_val
                     existing_obj.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 else:
+                    # ✅ Creación de hecho nuevo
                     new_fact = ChatFact(
                         chat_id=chat_id,
                         user_id=user_id,
@@ -178,5 +201,6 @@ async def process_and_store_semantic_facts(
         except Exception as e:
             logger.error(f"Error extracting fact {fact_type}: {e}")
 
+    # Commit final de todos los hechos procesados
     await db.commit()
     return extracted_facts

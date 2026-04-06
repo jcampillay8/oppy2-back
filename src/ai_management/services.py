@@ -25,7 +25,8 @@ async def ask_oppy_ai(
     model_name: Optional[str] = None,
     expect_json: bool = False,
     retries: int = 2,
-    temperature: float = 0.7
+    temperature: float = 0.7,
+    **kwargs
 ) -> str:
     """
     Orquestador de IA Evolucionado:

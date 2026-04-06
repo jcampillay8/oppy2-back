@@ -1,6 +1,8 @@
 # src/avatars/router/__init__.py
 from fastapi import APIRouter
-from .avatar_endpoints import router as avatar_router
+from .avatar_endpoints import router as avatar_endpoints
 
-router = APIRouter(prefix="/avatars", tags=["Avatars"])
-router.include_router(avatar_router)
+# Asegúrate de que el nombre coincida con lo que importa src/routers.py
+avatar_router = APIRouter(prefix="/avatars", tags=["Avatars"])
+
+avatar_router.include_router(avatar_endpoints)

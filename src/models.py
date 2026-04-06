@@ -68,33 +68,29 @@ class User(BaseModel):
     has_accepted_terms: Mapped[bool] = mapped_column(Boolean, default=False)
     last_login: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # Relaciones Auth
+    # --- RELACIONES ---
+
+    # Autenticación
     session_history: Mapped[List["UserSessionHistory"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     refresh_tokens: Mapped[List["RefreshToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     email_confirmation_tokens: Mapped[List["EmailConfirmationToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     password_reset_tokens: Mapped[List["PasswordResetToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
-    # --- Relación con Avatares ---
-    avatar_definitions: Mapped[List["AvatarDefinition"]] = relationship(
-        "AvatarDefinition", 
-        back_populates="user", 
-        cascade="all, delete-orphan"
-    )
-
-    # --- Nueva Relación Onboarding ---
-    placement_tests: Mapped[List["PlacementTest"]] = relationship(
-        "PlacementTest", 
-        back_populates="user", 
-        cascade="all, delete-orphan"
-    )
-    llm_requests: Mapped[List["LLMRequestLog"]] = relationship(
-        "LLMRequestLog", 
-        back_populates="user", 
-        cascade="all, delete-orphan"
-    )
-
+    # Chat & Mensajería
     chats: Mapped[List["Chat"]] = relationship(secondary=user_chat, back_populates="users")
     messages: Mapped[List["Message"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    chat_facts: Mapped[List["ChatFact"]] = relationship("ChatFact", back_populates="user", cascade="all, delete-orphan")
+    read_statuses: Mapped[List["ReadStatus"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+    # Feedback & Análisis (Crucial para Oppy2)
+    user_message_corrections: Mapped[List["UserMessageCorrection"]] = relationship("UserMessageCorrection", back_populates="user", cascade="all, delete-orphan")
+    # Si usas ErrorInsights en el nuevo proyecto, descomenta esta:
+    # error_insights: Mapped[List["UserErrorInsight"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+    # Onboarding & Log
+    avatar_definitions: Mapped[List["AvatarDefinition"]] = relationship("AvatarDefinition", back_populates="user", cascade="all, delete-orphan")
+    placement_tests: Mapped[List["PlacementTest"]] = relationship("PlacementTest", back_populates="user", cascade="all, delete-orphan")
+    llm_requests: Mapped[List["LLMRequestLog"]] = relationship("LLMRequestLog", back_populates="user", cascade="all, delete-orphan")
 
     def __str__(self):
         return f"{self.username}"
@@ -118,8 +114,23 @@ class Message(BaseModel):
     chat: Mapped["Chat"] = relationship(back_populates="messages")
     user: Mapped["User"] = relationship(back_populates="messages")
 
+    # Facts extraídos de este mensaje
+    facts_as_source: Mapped[List["ChatFact"]] = relationship(
+        "ChatFact", 
+        back_populates="source_message",
+        cascade="all, delete-orphan"
+    )
+
+    # Correcciones asociadas a este mensaje (Importante para el feedback del AI)
+    user_message_corrections: Mapped[List["UserMessageCorrection"]] = relationship(
+        "UserMessageCorrection",
+        back_populates="source_message",
+        cascade="all, delete-orphan"
+    )
+
     def __str__(self):
         return f"{self.role.upper()}: {self.content[:40]}..."
+
 
 class Chat(BaseModel):
     __tablename__ = "chats"
@@ -130,25 +141,25 @@ class Chat(BaseModel):
     title: Mapped[str] = mapped_column(String(150))
     system_prompt: Mapped[str] = mapped_column(String(2000))
 
+    # Relaciones
     users: Mapped[List["User"]] = relationship(secondary=user_chat, back_populates="chats")
-    messages: Mapped[List["Message"]] = relationship(back_populates="chat")
+    messages: Mapped[List["Message"]] = relationship(back_populates="chat", cascade="all, delete-orphan")
+    facts: Mapped[List["ChatFact"]] = relationship(back_populates="chat", cascade="all, delete-orphan")
+    read_statuses: Mapped[List["ReadStatus"]] = relationship(back_populates="chat", cascade="all, delete-orphan")
 
-    # --- VÍNCULO CON EL AVATAR SELECCIONADO ---
-    # Es Optional porque un chat podría ser genérico o previo a la selección
+    # Vínculo con Avatar (Oppy2)
     avatar_definition_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey(f"{settings.DB_SCHEMA}.avatar_definitions.id"), 
         nullable=True
     )
-    avatar_definition: Mapped[Optional["AvatarDefinition"]] = relationship(
-        back_populates="chats"
-    )
-    
+    avatar_definition: Mapped[Optional["AvatarDefinition"]] = relationship(back_populates="chats")
+
+    # Control de TTS
     is_tts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     selected_voice: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     def __str__(self):
         return f"{self.title}"
-
 class ReadStatus(RemoveBaseFieldsMixin, BaseModel):
     __tablename__ = "read_status"
     __table_args__ = ({'schema': settings.DB_SCHEMA})
