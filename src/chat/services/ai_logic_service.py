@@ -59,9 +59,18 @@ async def generate_avatar_response(
         f"--- START OF AVATAR PERSONALITY ---\n"
         f"{base_avatar_prompt}\n"
         f"--- END OF AVATAR PERSONALITY ---\n\n"
+        
         f"--- RELEVANT CONTEXT ABOUT THE USER (FACTS) ---\n"
         f"{context if context else 'No previous facts known yet.'}\n"
         f"--- END OF CONTEXT ---\n\n"
+        
+        # 🚀 REGLAS DE CONTINUIDAD (Crucial para la inmersión)
+        f"--- CHAT CONTINUITY RULES ---\n"
+        f"- You are in an ongoing chat. DO NOT say 'Hello', 'Hi', or 'Nice to meet you'.\n"
+        f"- Do not use any introductory greetings or pleasantries.\n"
+        f"- Jump straight into the feedback or response naturally.\n"
+        f"- Maintain a fluid conversation as if you were talking to a friend or colleague.\n\n"
+
         f"--- ADDITIONAL INTERACTION RULES ---\n"
         f"{system_prompt_override if system_prompt_override else ''}\n"
         f"Interact naturally in {avatar.language_preference}. Keep the character consistent."

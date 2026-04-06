@@ -102,28 +102,28 @@ class MessageService:
             return True
         return False
 
-async def get_chat_messages_paginated(
-        self, 
-        chat_guid: uuid.UUID, 
-        user_id: int, 
-        limit: int = 50
-    ) -> List[Message]:
-        """
-        Recupera los mensajes de un chat específico para mostrar en la UI.
-        Incluye validación de que el chat pertenece al usuario.
-        """
-        from src.models import Chat # Import local para evitar círculos si es necesario
-        
-        stmt = (
-            select(Message)
-            .join(Chat)
-            .where(
-                Chat.guid == chat_guid,
-                Message.is_deleted == False
+    async def get_chat_messages_paginated(
+            self, 
+            chat_guid: uuid.UUID, 
+            user_id: int, 
+            limit: int = 50
+        ) -> List[Message]:
+            """
+            Recupera los mensajes de un chat específico para mostrar en la UI.
+            Incluye validación de que el chat pertenece al usuario.
+            """
+            from src.models import Chat # Import local para evitar círculos si es necesario
+            
+            stmt = (
+                select(Message)
+                .join(Chat)
+                .where(
+                    Chat.guid == chat_guid,
+                    Message.is_deleted == False
+                )
+                .order_by(Message.created_at.asc()) # Orden natural para el chat
+                .limit(limit)
             )
-            .order_by(Message.created_at.asc()) # Orden natural para el chat
-            .limit(limit)
-        )
-        
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
+            
+            result = await self.db.execute(stmt)
+            return list(result.scalars().all())

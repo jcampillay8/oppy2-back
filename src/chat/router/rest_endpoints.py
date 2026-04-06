@@ -23,7 +23,7 @@ from src.chat.schemas import (
 # deberás definirlos o usar los nombres correctos.
 
 from src.chat.services.chat_listing_service import get_user_chat_list
-from src.chat.services.message_service import get_chat_messages_paginated
+from src.chat.services.message_service import MessageService
 from src.chat.services.read_status_service import ReadStatusService
 from src.chat.services.interaction_handler import InteractionHandler
 from src.avatars.services import create_avatar_chat_session

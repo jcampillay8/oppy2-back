@@ -75,12 +75,19 @@ class InteractionHandler:
         lang = chat.avatar_definition.language_preference if chat.avatar_definition else "en-US"
         feedback = await self._run_correction_pipeline(user_msg, lang)
 
-        # 4. Generar respuesta de la IA (Sarah Pearson)
+        # 4. Generar respuesta de la IA
+        llm_history = await self.msg_service.get_chat_history_for_llm(chat_id=chat.id, limit=10)
+
+        # Filtramos el mensaje que acabamos de guardar para no duplicarlo 
+        # (porque get_chat_history_for_llm trae los últimos N, incluyendo el actual)
+        chat_history = [msg for msg in llm_history if msg["content"] != user_message_content]
+
         bot_response_text = await generate_avatar_response(
             db=self.db,
             chat=chat,
             user_id=self.user.id,
-            user_message=user_message_content
+            user_message=user_message_content,
+            chat_history=chat_history  # Sarah ahora tiene el contexto limpio
         )
 
         bot_msg = await self.msg_service.create_message(
