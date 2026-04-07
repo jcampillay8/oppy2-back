@@ -126,16 +126,22 @@ async def create_avatar_chat_session(db: AsyncSession, user_id: int, avatar: Ava
 
 async def reset_avatar_conversation(db: AsyncSession, user_id: int, avatar_guid: uuid.UUID) -> Chat:
     """Reinicia el chat: limpia mensajes y crea nuevo inicio."""
+    
+    # 🚀 AJUSTE AQUÍ: Entramos por AvatarDefinition para encontrar el GUID
     chat_query = await db.execute(
-        select(Chat).join(user_chat).where(
+        select(Chat)
+        .join(user_chat, Chat.id == user_chat.c.chat_id)
+        .join(AvatarDefinition, Chat.avatar_definition_id == AvatarDefinition.id) # Unimos con la definición
+        .where(
             user_chat.c.user_id == user_id,
-            Chat.avatar_definition_guid == avatar_guid
+            AvatarDefinition.guid == avatar_guid # Ahora sí podemos usar el GUID
         ).options(selectinload(Chat.avatar_definition))
     )
     chat_obj = chat_query.scalar_one_or_none()
 
     if not chat_obj:
         raise ValueError("No se encontró una conversación activa para reiniciar.")
+    
 
     # Limpiar mensajes y hechos
     messages_result = await db.execute(select(Message.id).where(Message.chat_id == chat_obj.id))

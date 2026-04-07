@@ -14,6 +14,8 @@ class AvatarDefinition(BaseModel):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     guid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), unique=True, default=uuid.uuid4)
 
+    title: Mapped[str] = mapped_column(String(150), nullable=False)
+
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     user: Mapped["User"] = relationship(back_populates="avatar_definitions")
 
@@ -28,6 +30,9 @@ class AvatarDefinition(BaseModel):
     character_traits: Mapped[str | None] = mapped_column(Text, nullable=True)
     rules: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_format_preference: Mapped[OutputFormatEnum | None] = mapped_column(String(50), nullable=True)
+
+    likes_count: Mapped[int] = mapped_column(Integer, default=0) # Contador de Ratings/Likes
+    scenario_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # ⭐ CONFIGURACIÓN DE VOZ E IDIOMA ⭐
     language_preference: Mapped[str | None] = mapped_column(String(10), nullable=True, default="en-US")

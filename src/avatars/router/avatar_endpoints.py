@@ -35,12 +35,25 @@ router = APIRouter()
 # SECCIÓN: CRUD DE AVATARES
 # ==========================================
 
-@router.get("/", response_model=List[AvatarDefinitionOut])
-async def list_avatars(
+@router.get("/public", response_model=List[AvatarDefinitionOut])
+async def list_public_avatars(
+    db: AsyncSession = Depends(get_async_session),
+    # Quitamos el current_user para que los públicos sean accesibles 
+    # o puedes dejarlo si quieres que solo logueados los vean
+):
+    """Lista avatares globales marcados como públicos."""
+    # Asumiendo que tienes un campo 'is_public' en tu modelo
+    result = await db.execute(
+        select(AvatarDefinition).where(AvatarDefinition.is_public == True)
+    )
+    return result.scalars().all()
+
+@router.get("/me", response_model=List[AvatarDefinitionOut])
+async def list_my_avatars(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session)
 ):
-    """Lista todos los avatares del usuario."""
+    """Alias para listar solo los avatares creados por el usuario actual."""
     return await get_user_avatar_definitions(db, current_user.id)
 
 @router.post("/", response_model=AvatarDefinitionOut, status_code=status.HTTP_201_CREATED)

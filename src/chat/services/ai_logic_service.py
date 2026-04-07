@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.ai_management.config import DEFAULT_MODEL
 from src.avatars.config import LABELS, LABEL_TO_FACT_TYPE
 from src.ai_management.services import ask_oppy_ai as ask_llm
+from src.onboarding.models import PlacementTest
 from src.avatars.prompt_builder import (
     build_system_prompt_from_avatar_definition, 
     build_fact_context
@@ -25,55 +26,67 @@ def _ensure_string(llm_response_raw) -> str:
         return str(llm_response_raw[0])
     return str(llm_response_raw) if llm_response_raw else ""
 
+async def get_user_suggested_level(db: AsyncSession, user_id: int) -> str:
+    """Busca el nivel sugerido del usuario. Por defecto B1 si no existe."""
+    stmt = (
+        select(PlacementTest.suggested_level)
+        .where(PlacementTest.user_id == user_id)
+        .order_by(PlacementTest.completed_at.desc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    level = result.scalar_one_or_none()
+    return level or "B1" # Default razonable
+
 # ==============================================================================
 # 1. Generación de Respuestas (Avatar Interaction)
 # ==============================================================================
 
 async def generate_avatar_response(
     db: AsyncSession,
-    chat: any,              # Recibe el objeto Chat completo desde el Handler
+    chat: any,
     user_id: int,
-    user_message: str,      # Coincide con el nombre enviado por el Handler
+    user_message: str,
     facts: List[ChatFact] = [],
     chat_history: List[Dict[str, str]] = [],
     system_prompt_override: Optional[str] = None,
-    **kwargs                # Por si acaso el Handler envía chat_id u otros extras
+    **kwargs
 ) -> str:
-    """
-    Orquesta la generación de la respuesta del Avatar usando RAG (facts) y su personalidad.
-    """
     
-    # 0. Extraer el Avatar del objeto Chat
-    # Esto es vital porque el Handler envía el objeto Chat, no el Avatar directamente
     avatar = chat.avatar_definition 
-
-    # 1. Construir el contexto de hechos conocidos (RAG)
     context = build_fact_context(facts)
-
-    # 2. Obtener la base de personalidad del Avatar
-    # NOTA: Asegúrate de que esta función se llame así o build_system_prompt_from_avatar_definition
     base_avatar_prompt = build_system_prompt_from_avatar_definition(avatar)
+    
+    # 🚀 MEJORA 1: Obtener el nivel real del usuario
+    user_level = await get_user_suggested_level(db, user_id)
 
-    # 3. Ensamblar el System Prompt Final
+    # 3. Ensamblar el System Prompt Final con esteroides de brevedad
     final_system_prompt = (
         f"--- START OF AVATAR PERSONALITY ---\n"
         f"{base_avatar_prompt}\n"
         f"--- END OF AVATAR PERSONALITY ---\n\n"
         
-        f"--- RELEVANT CONTEXT ABOUT THE USER (FACTS) ---\n"
-        f"{context if context else 'No previous facts known yet.'}\n"
-        f"--- END OF CONTEXT ---\n\n"
-        
-        # 🚀 REGLAS DE CONTINUIDAD (Crucial para la inmersión)
-        f"--- CHAT CONTINUITY RULES ---\n"
-        f"- You are in an ongoing chat. DO NOT say 'Hello', 'Hi', or 'Nice to meet you'.\n"
-        f"- Do not use any introductory greetings or pleasantries.\n"
-        f"- Jump straight into the feedback or response naturally.\n"
-        f"- Maintain a fluid conversation as if you were talking to a friend or colleague.\n\n"
+        f"--- USER PROFICIENCY LEVEL: {user_level} ---\n"
+        f"- Use vocabulary and grammar strictly appropriate for {user_level}.\n"
+        f"- If the level is A1-A2, use very simple sentences and avoid idioms.\n\n"
 
-        f"--- ADDITIONAL INTERACTION RULES ---\n"
+        f"--- RELEVANT CONTEXT (FACTS) ---\n"
+        f"{context if context else 'No previous facts known yet.'}\n\n"
+        
+        f"--- CONVERSATION & BREVITY RULES ---\n"
+        f"- BE EXTREMELY CONCISE. This is a chat, not an email or a lecture.\n"
+        f"- LIMIT YOUR RESPONSE to maximum 2 or 3 short paragraphs.\n"
+        f"- DO NOT provide long lists of advice. Give 1 or 2 tips maximum and ask if the user wants more.\n"
+        f"- If you correct grammar, be brief. Example: 'You said X, but it's better Y because Z'. Then move on.\n"
+        f"- Always end with a short, engaging question to keep the conversation flowing.\n\n"
+
+        f"--- CHAT CONTINUITY RULES ---\n"
+        f"- NO greetings like 'Hello' or 'Hi there'.\n"
+        f"- Jump straight to the point.\n\n"
+
+        f"--- ADDITIONAL RULES ---\n"
         f"{system_prompt_override if system_prompt_override else ''}\n"
-        f"Interact naturally in {avatar.language_preference}. Keep the character consistent."
+        f"Language: {avatar.language_preference}."
     ).strip()
 
     # 4. Preparar el historial de mensajes para el LLM
@@ -84,7 +97,7 @@ async def generate_avatar_response(
     # 5. Determinar tokens según formato
     format_pref = str(avatar.output_format_preference).lower() if hasattr(avatar, 'output_format_preference') else "normal"
     # Si no tienes definida la constante OUTPUT_FORMAT_MAX_TOKENS, la definimos aquí rápido:
-    max_tokens = {"short": 150, "normal": 300, "long": 600}.get(format_pref, 300)
+    max_tokens = {"short": 100, "normal": 200, "long": 400}.get(format_pref, 200)
 
     # 6. Llamar al LLM (Asegúrate de que ask_llm tenga **kwargs en su definición)
     response_raw = await ask_llm(
