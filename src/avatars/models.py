@@ -76,3 +76,25 @@ class AvatarDefinitionTranslation(BaseModel):
     avatar_definition_main: Mapped["AvatarDefinition"] = relationship(
         back_populates="translations"
     )
+
+class ScenarioCategory(BaseModel):
+    __tablename__ = "scenario_categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    
+    # Relación jerárquica: un hijo tiene un padre
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        Integer, 
+        ForeignKey("scenario_categories.id", ondelete="CASCADE"), 
+        nullable=True
+    )
+    
+    # Relaciones de SQLAlchemy para navegación fácil
+    parent: Mapped[Optional["ScenarioCategory"]] = relationship(
+        "ScenarioCategory", 
+        remote_side=[id], 
+        backref="children"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

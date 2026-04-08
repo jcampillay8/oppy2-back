@@ -6,7 +6,6 @@ from datetime import datetime
 import humps
 from .enums import OutputFormatEnum, VoiceKeyEnum
 
-
 def to_camel(string: str) -> str:
     return humps.camelize(string)
 
@@ -32,10 +31,15 @@ class OppyHostAvatarProfileOut(BaseModel):
 # --- SCHEMAS DE AVATAR ---
 
 class AvatarDefinitionBase(BaseModel):
+    """
+    Base para definiciones de avatar. Contiene todos los campos comunes.
+    """
+    title: str = Field(..., max_length=255, description="Título del escenario o práctica.")
+    scenario_category: Optional[str] = Field(None, description="Categorías o tags separados por coma.")
     name: str = Field(..., max_length=150, description="Nombre descriptivo del avatar.")
     role_avatar: str = Field(..., max_length=500, description="El rol que desempeñará el avatar.")
     role_usuario: str = Field(..., max_length=255, description="El rol que el usuario tendrá.")
-    objective: str = Field(..., max_length=500, description="El objetivo principal del avatar.")
+    objective: Optional[str] = Field("", max_length=500, description="El objetivo principal del avatar.")
     context: str = Field(..., description="El contexto general o escenario.")
     character_traits: Optional[str] = Field(None, description="Rasgos de carácter.")
     rules: Optional[str] = Field(None, description="Reglas específicas de comportamiento.")
@@ -49,18 +53,21 @@ class AvatarDefinitionBase(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 class AvatarDefinitionCreate(AvatarDefinitionBase):
+    """Esquema para la creación de un nuevo avatar."""
     pass
 
 class AvatarDefinitionUpdate(BaseModel):
     """
-    Esquema para actualizar una definición de avatar (campos opcionales).
+    Esquema para actualizar una definición de avatar (todos los campos opcionales).
     """
+    title: Optional[str] = Field(None, max_length=255)
+    scenario_category: Optional[str] = Field(None)
     name: Optional[str] = Field(None, max_length=150)
-    role_avatar: Optional[str] = Field(None, max_length=500, alias="roleAvatar")
-    role_usuario: Optional[str] = Field(None, max_length=255, alias="roleUsuario")
+    role_avatar: Optional[str] = Field(None, max_length=500)
+    role_usuario: Optional[str] = Field(None, max_length=255)
     objective: Optional[str] = Field(None, max_length=500)
     context: Optional[str] = Field(None)
-    character_traits: Optional[str] = Field(None, alias="characterTraits")
+    character_traits: Optional[str] = Field(None)
     rules: Optional[str] = Field(None)
     output_format_preference: Optional[OutputFormatEnum] = Field(None)
     language_preference: Optional[str] = Field(None, max_length=10)
@@ -73,17 +80,19 @@ class AvatarDefinitionUpdate(BaseModel):
 
 class AvatarDefinitionOut(BaseModel):
     """
-    Esquema de salida para la definición de un Avatar con lógica de herencia.
+    Esquema de salida para la definición de un Avatar con lógica de herencia de perfiles Host.
     """
     id: int
     guid: UUID
+    title: str
+    scenario_category: Optional[str] = Field(None, alias="scenarioCategory")
     user_id: int = Field(alias="userId")
     host_profile_id: Optional[int] = Field(None, alias="hostProfileId")
     name: str
     is_deleted: bool = Field(alias="isDeleted")
     is_public: bool = Field(alias="isPublic")
 
-    # Estos campos se usan como respaldo si no hay host_profile
+    # Campos de respaldo (raw data)
     role_avatar: Optional[str] = Field(None, alias="roleAvatar")
     role_usuario: Optional[str] = Field(None, alias="roleUsuario")
     objective: Optional[str] = Field(None)
@@ -141,9 +150,21 @@ class AvatarDefinitionOut(BaseModel):
     is_tts_enabled: Optional[bool] = Field(None, alias="isTtsEnabled")
     created_at: datetime = Field(alias="createdAt")
 
-    model_config = ConfigDict(
-        alias_generator=to_camel, 
-        populate_by_name=True, 
-        from_attributes=True
-    )
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
 
+# --- ESQUEMAS DE CATEGORÍAS ---
+
+class ScenarioCategoryOut(BaseModel):
+    id: int
+    name: str
+    parent_id: Optional[int] = Field(None, alias="parentId")
+    
+    model_config = ConfigDict(from_attributes=True, alias_generator=to_camel, populate_by_name=True)
+
+class CategoryNodeOut(BaseModel):
+    id: int
+    name: str
+    parent_id: Optional[int] = Field(None, alias="parentId")
+    children: List["CategoryNodeOut"] = [] 
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=to_camel)

@@ -44,19 +44,18 @@ async def get_avatar_definition_by_guid(db: AsyncSession, avatar_guid: uuid.UUID
 
 async def create_avatar_definition(db: AsyncSession, user_id: int, avatar_data) -> AvatarDefinition:
     """Crea el avatar e inicia automáticamente su primera sesión de chat."""
+    
+    # --- LA CORRECCIÓN ESTÁ AQUÍ ---
+    # Usamos model_dump para no tener que mapear a mano y no olvidar campos como 'title'
+    avatar_dict = avatar_data.model_dump()
+    
     new_avatar = AvatarDefinition(
         user_id=user_id,
-        name=avatar_data.name,
-        role_avatar=avatar_data.role_avatar, # Corregido: role_bot -> role_avatar
-        role_usuario=avatar_data.role_usuario,
-        objective=avatar_data.objective,
-        context=avatar_data.context,
-        character_traits=avatar_data.character_traits,
-        rules=avatar_data.rules,
-        language_preference=avatar_data.language_preference or "en-US",
-        is_tts_enabled=avatar_data.is_tts_enabled,
-        selected_voice=avatar_data.selected_voice
+        guid=uuid.uuid4(),
+        **avatar_dict  # Esto expande title, name, context, role_avatar, etc.
     )
+    # ------------------------------
+    
     db.add(new_avatar)
     await db.flush()
 
@@ -67,18 +66,19 @@ async def create_avatar_definition(db: AsyncSession, user_id: int, avatar_data) 
     await db.refresh(new_avatar)
     return new_avatar
 
-# ⭐ FUNCIÓN QUE FALTABA (La que pedía el router) ⭐
 async def update_avatar_definition(db: AsyncSession, avatar_guid: uuid.UUID, user_id: int, avatar_data) -> Optional[AvatarDefinition]:
     """Actualiza una definición de avatar existente."""
     avatar = await get_avatar_definition_by_guid(db, avatar_guid, user_id)
     if not avatar:
         return None
 
-    # Actualización dinámica de campos
+    # Actualización dinámica de campos (exclude_unset asegura que no pise con None lo que no enviaste)
     update_data = avatar_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         if hasattr(avatar, key):
             setattr(avatar, key, value)
+    
+    avatar.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     
     await db.flush()
     await db.commit()

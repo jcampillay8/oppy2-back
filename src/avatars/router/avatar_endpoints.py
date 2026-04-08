@@ -9,11 +9,12 @@ from sqlalchemy import select
 from src.database import get_async_session
 from src.dependencies import get_current_user, get_cache, get_cache_setting
 from src.models import User
-from src.avatars.models import AvatarDefinition
+from src.avatars.models import AvatarDefinition, ScenarioCategory
 from src.avatars.schemas import (
     AvatarDefinitionOut,
     AvatarDefinitionUpdate,
-    AvatarDefinitionCreate
+    AvatarDefinitionCreate,
+    CategoryNodeOut
 )
 # Esquemas de Chat para el reset
 from src.chat.schemas import AvatarChatOutSchema 
@@ -30,6 +31,45 @@ from src.avatars.services import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# ==========================================
+# SECCIÓN: METADATOS / CONFIGURACIÓN (Rutas Estáticas)
+# ==========================================
+
+@router.get("/categories", response_model=List[CategoryNodeOut])
+async def get_all_categories(db: AsyncSession = Depends(get_async_session)):
+    """Retorna las categorías de escenarios en formato jerárquico."""
+    result = await db.execute(
+        select(ScenarioCategory).filter(ScenarioCategory.is_deleted == False)
+    )
+    categories = result.scalars().all()
+    
+    # 1. Convertimos los objetos de BD a diccionarios simples para evitar el error de Greenlet
+    # Solo tomamos los campos escalares (id, name, parent_id)
+    nodes = {
+        c.id: CategoryNodeOut(
+            id=c.id, 
+            name=c.name, 
+            parentId=c.parent_id, 
+            children=[]
+        ) 
+        for c in categories
+    }
+    
+    tree = []
+    
+    # 2. Construimos la jerarquía usando los objetos de Pydantic ya creados
+    for c in categories:
+        current_node = nodes[c.id]
+        if c.parent_id:
+            parent_node = nodes.get(c.parent_id)
+            if parent_node:
+                parent_node.children.append(current_node)
+        else:
+            # Si no tiene padre, es una raíz
+            tree.append(current_node)
+            
+    return tree
 
 # ==========================================
 # SECCIÓN: CRUD DE AVATARES
@@ -175,3 +215,4 @@ async def update_avatar_tts_settings(
     await db.commit()
     await db.refresh(avatar)
     return avatar
+
