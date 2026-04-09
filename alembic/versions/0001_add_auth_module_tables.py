@@ -171,9 +171,6 @@ def upgrade() -> None:
     )
     op.create_index('idx_session_login_time', 'user_session_history', ['login_time'], unique=False, schema='chat')
     op.create_index('idx_session_user_id', 'user_session_history', ['user_id'], unique=False, schema='chat')
-    op.drop_table('dim_device')
-    op.drop_table('dim_service')
-    op.drop_table('fct_device_usage')
     # ### end Alembic commands ###
 
 
