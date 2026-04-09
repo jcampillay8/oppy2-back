@@ -23,6 +23,7 @@ from src.chat.services.text_analysis_service import (
     correct_user_message, 
     evaluate_user_message_score
 )
+from src.avatars.models import AvatarDefinition
 
 # ✅ CAMBIO CLAVE: Importamos el nuevo procesador de aprendizaje
 from src.learning_analysis.services.processor import process_learning_analysis
@@ -44,23 +45,36 @@ class InteractionHandler:
         chat_guid: uuid.UUID, 
         user_message_content: str
     ) -> Tuple[Message, Message, Optional[Dict[str, Any]]]:
-        """
-        Orquestador principal:
-        1. Busca el chat y valida.
-        2. Guarda mensaje del usuario.
-        3. Ejecuta pipeline de corrección y aprendizaje.
-        4. Genera respuesta de la IA (Avatar).
-        """
-        # 1. Buscar el Chat con su definición de avatar
+        
+        # 1. Intentar buscar el Chat (Asegúrate de usar la sesión actual)
         stmt = select(Chat).where(Chat.guid == chat_guid).options(
             selectinload(Chat.avatar_definition)
         )
         result = await self.db.execute(stmt)
         chat = result.scalar_one_or_none()
 
+        # 2. Si no lo encuentra, intentamos por Avatar
         if not chat:
-            raise ValueError("Chat not found")
+            # Hacemos un log más detallado para debug
+            logger.info(f"GUID {chat_guid} no encontrado como Chat. Probando como Avatar...")
+            
+            stmt_alt = (
+                select(Chat)
+                .join(Chat.avatar_definition) # Asegúrate de usar la relación
+                .where(
+                    AvatarDefinition.guid == chat_guid,
+                    Chat.users.any(id=self.user.id)
+                )
+                .options(selectinload(Chat.avatar_definition))
+            )
+            result_alt = await self.db.execute(stmt_alt)
+            chat = result_alt.scalar_one_or_none()
 
+        if not chat:
+            # Antes de rendirnos, intentamos refrescar la sesión por si es un chat recién creado
+            # Esto fuerza a SQLAlchemy a mirar la DB real
+            logger.warning(f"No se encontró Chat ni Avatar para {chat_guid}. Error 404 inminente.")
+            raise ValueError("Chat not found. Please ensure the avatar has an active session.")
         # 2. Guardar mensaje del Usuario
         user_msg = await self.msg_service.create_message(
             chat_id=chat.id,

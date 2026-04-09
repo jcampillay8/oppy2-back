@@ -55,26 +55,33 @@ async def create_chat_with_avatar(
         if not avatar_obj:
             raise HTTPException(status_code=400, detail="Avatar definition not found.")
 
-        # 2. ✅ CORRECCIÓN: Nombres de parámetros alineados con src/avatars/services.py
-        # El servicio espera (db, user_id, avatar)
+        # 2. Crear la sesión
         new_chat = await create_avatar_chat_session(
             db=db,
             user_id=current_user.id,
             avatar=avatar_obj 
         )
 
+        # 🚀 AJUSTE VITAL: Confirmar cambios en la DB
+        # Sin esto, la siguiente petición de Flutter podría no encontrar el chat
+        await db.commit() 
+
         if cache_enabled:
             await cache.delete(f"avatar_chats_{current_user.guid}")
 
-        # 3. Recarga
+        # 3. Recarga (Refresh para obtener los datos frescos tras el commit)
         stmt = select(Chat).where(Chat.guid == new_chat.guid).options(
             selectinload(Chat.avatar_definition),
             selectinload(Chat.users)
         )
         result = await db.execute(stmt)
-        return result.scalar_one()
+        chat_final = result.scalar_one()
+
+        return chat_final
 
     except Exception as e:
+        # ⚠️ IMPORTANTE: Si algo falla, hacemos rollback para no dejar la sesión sucia
+        await db.rollback()
         logger.error(f"Error creating chat: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal error during chat creation.")
 
