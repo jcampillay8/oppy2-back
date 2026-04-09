@@ -64,9 +64,13 @@ app = FastAPI(
 # 🛡️ Trusted Hosts & Middlewares
 # ==============================
 if settings.ENVIRONMENT == "production":
-    trusted_hosts = ["api.oppychat.com", "*.oppychat.com"]
+    trusted_hosts = [
+        "api.oppychat.com", 
+        "*.oppychat.com",
+        "oppy2-back-production.up.railway.app", # <-- AGREGA ESTO
+        "*.up.railway.app"                       # <-- OPCIONAL: Para aceptar cualquier subdominio de Railway
+    ]
 else:
-    # Agregamos 0.0.0.0 y host.docker.internal por seguridad en Docker
     trusted_hosts = ["localhost", "127.0.0.1", "10.0.2.2", "0.0.0.0", "*.ngrok-free.app"]
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)

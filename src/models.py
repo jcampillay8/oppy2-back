@@ -160,6 +160,7 @@ class Chat(BaseModel):
 
     def __str__(self):
         return f"{self.title}"
+        
 class ReadStatus(RemoveBaseFieldsMixin, BaseModel):
     __tablename__ = "read_status"
     __table_args__ = ({'schema': settings.DB_SCHEMA})
