@@ -1,5 +1,6 @@
 # src/onboarding/test_services/writing.py
 import logging
+import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.ai_management.services import ask_oppy_ai
 from src.models import User
@@ -38,11 +39,16 @@ async def generate_writing_question(db: AsyncSession, user: User, target_lang: s
 
     user_prompt = "Genera la pregunta de escritura ahora."
 
-    # Llamamos a tu orquestador de IA
+    # AJUSTE: Construimos la lista de mensajes que espera ask_oppy_ai
+    messages = [
+        {"role": "system", "content": system_instruction},
+        {"role": "user", "content": user_prompt}
+    ]
+
+    # Llamamos a tu orquestador de IA con el argumento 'messages'
     question = await ask_oppy_ai(
         db=db,
-        system_instruction=system_instruction,
-        user_prompt=user_prompt,
+        messages=messages,
         user_id=user.id,
         caller="writing_test_generator",
         expect_json=False
@@ -76,15 +82,28 @@ async def evaluate_writing_response(db: AsyncSession, user_id: int, user_answer:
 
     user_prompt = f"Evalúa esta respuesta de nivel diagnóstico: '{user_answer}'"
 
+    # AJUSTE: Construimos la lista de mensajes para la evaluación
+    messages = [
+        {"role": "system", "content": system_instruction},
+        {"role": "user", "content": user_prompt}
+    ]
+
     # Llamamos a la IA esperando un JSON
     evaluation_json = await ask_oppy_ai(
         db=db,
-        system_instruction=system_instruction,
-        user_prompt=user_prompt,
+        messages=messages,
         user_id=user_id,
         caller="writing_test_evaluator",
         expect_json=True
     )
     
-    import json
-    return json.loads(evaluation_json)
+    try:
+        return json.loads(evaluation_json)
+    except json.JSONDecodeError:
+        # Fallback en caso de que la reparación de JSON falle
+        logger.error(f"Error decodificando JSON de evaluación: {evaluation_json}")
+        return {
+            "score": 0,
+            "feedback": "Error al procesar la respuesta de la IA.",
+            "suggested_level": "N/A"
+        }
