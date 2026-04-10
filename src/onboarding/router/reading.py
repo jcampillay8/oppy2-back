@@ -1,5 +1,6 @@
 # src/onboarding/router/reading.py
 import json
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -9,30 +10,34 @@ from src.dependencies import get_current_user
 from src.models import User
 from src.onboarding.models import PlacementTest, PlacementTestDetail
 from src.onboarding.test_services.reading import ReadingTestService
-from .. import schemas # Sube un nivel al ser paquete router
+from .. import schemas 
 
-# ✅ Eliminamos prefix ya que el __init__.py del paquete lo maneja
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Reading Test"])
 reading_service = ReadingTestService()
 
 @router.get("/reading/question", response_model=dict)
 async def get_reading_question(
-    db: AsyncSession = Depends(get_async_session), # Asegúrate de que sea AsyncSession
+    db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user)
 ):
-    """Genera la historia B2 basada en la bio y la guarda asíncronamente."""
-    
     if not current_user.bio:
         raise HTTPException(status_code=400, detail="User biography is required.")
         
-    # 🛠️ EL AJUSTE ESTÁ AQUÍ: Pasamos los 3 argumentos requeridos
     task_data = await reading_service.generate_reading_task(
         db=db, 
         user_id=current_user.id, 
         user_bio=current_user.bio
     )
 
-    # 1. Buscar o crear el PlacementTest (Async)
+    # Normalización: Aseguramos que sea un dict para el dumps
+    if isinstance(task_data, str):
+        try:
+            task_data = json.loads(task_data)
+        except:
+            logger.error("Failed to parse task_data string")
+
+    # 1. Buscar o crear el PlacementTest
     test_stmt = select(PlacementTest).where(
         PlacementTest.user_id == current_user.id,
         PlacementTest.target_language == "en"
@@ -53,6 +58,7 @@ async def get_reading_question(
     detail_result = await db.execute(detail_stmt)
     detail = detail_result.scalar_one_or_none()
     
+    # Serializamos una sola vez para la DB
     question_json = json.dumps(task_data)
 
     if detail:

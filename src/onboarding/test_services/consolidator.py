@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class TestConsolidator:
     def determine_global_level(self, avg_score: float) -> str:
-        """Mapea el puntaje promedio al nivel CEFR basado en tus constantes."""
+        """Mapea el puntaje promedio al nivel CEFR."""
         if avg_score >= 95: return "C2"
         if avg_score >= 86: return "C1"
         if avg_score >= 76: return "B2"
@@ -26,64 +26,73 @@ class TestConsolidator:
         scores: Dict[str, float]
     ) -> Dict[str, Any]:
         """
-        Genera el análisis de IA consolidando los puntajes numéricos y 
-        el feedback detallado de cada sección almacenado en la DB.
+        Genera el análisis de IA consolidando los puntajes y el feedback de la DB.
         """
         
-        # 1. Recuperamos el feedback real de cada sección de la tabla de detalles
+        # 1. Recuperamos el feedback de la DB
         result = await db.execute(
             select(PlacementTestDetail).where(PlacementTestDetail.placement_test_id == test_id)
         )
         details = result.scalars().all()
 
-        # 2. Construimos el contexto de evidencia para Gemini
         evidence_context = ""
         for d in details:
-            # Incluimos sección y el feedback que Gemini dio en ese momento
-            evidence_context += f"- {d.section.upper()}: {d.feedback_text}\n"
+            # Manejo de feedback nulo para evitar errores de concatenación
+            fb = d.feedback_text if d.feedback_text else "Sin feedback disponible."
+            evidence_context += f"- {d.section.upper()}: {fb}\n"
 
-        # 3. Definimos una instrucción que obligue a la IA a ser específica
+        # 2. Definimos la instrucción del sistema
         system_instruction = """
         Eres 'Oppy', un coach de idiomas experto y motivador. 
-        Tu objetivo es analizar el desempeño global de un estudiante en su prueba de nivelación.
+        Analiza el desempeño global de un estudiante en su prueba de nivelación.
         
         Debes entregar una conclusión en ESPAÑOL que:
-        1. Analice la relación entre los puntajes y el feedback de cada sección.
-        2. Identifique la mayor fortaleza y el área crítica de mejora.
-        3. Proporcione un consejo accionable y profesional.
+        1. Analice la relación entre puntajes y feedback.
+        2. Identifique fortaleza y área de mejora.
+        3. Proporcione un consejo accionable.
         
         REGLAS:
-        - Tono: Alentador pero técnicamente preciso.
-        - Longitud: Máximo 70 palabras.
-        - Idioma: Español.
+        - Tono: Alentador pero preciso.
+        - Máximo 70 palabras.
+        - Responde directamente con el texto del análisis.
         """
 
         user_prompt = f"""
-        PUNTAJES OBTENIDOS:
-        Writing: {scores['writing']}%
-        Reading: {scores['reading']}%
-        Listening: {scores['listening']}%
-        Speaking: {scores['speaking']}%
+        PUNTAJES:
+        Writing: {scores.get('writing', 0)}%
+        Reading: {scores.get('reading', 0)}%
+        Listening: {scores.get('listening', 0)}%
+        Speaking: {scores.get('speaking', 0)}%
 
-        EVIDENCIA DETALLADA (FEEDBACK POR SECCIÓN):
+        EVIDENCIA POR SECCIÓN:
         {evidence_context}
         """
 
-        # 4. Llamada a Oppy para el análisis narrativo
+        # --- AJUSTE CLAVE: Empaquetar en messages ---
+        messages = [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        # 3. Llamada a Sofia (Oppy AI)
         analysis_text = await ask_oppy_ai(
             db=db,
-            system_instruction=system_instruction,
-            user_prompt=user_prompt,
+            messages=messages, # <--- Cambio de firma
             user_id=user_id,
             caller="onboarding_final_analysis",
             expect_json=False 
         )
 
-        avg_score = sum(scores.values()) / 4
+        # 4. Cálculo de nivel global
+        # Usamos .values() con seguridad
+        total_scores = [float(v) for v in scores.values() if v is not None]
+        avg_score = sum(total_scores) / len(total_scores) if total_scores else 0
+        
         global_level = self.determine_global_level(avg_score)
 
         return {
-            "analysis_text": analysis_text,
+            "analysis_text": analysis_text if analysis_text else "Análisis no disponible en este momento.",
             "global_level": global_level,
-            "suggested_plan": f"Plan Enfoque {global_level}"
+            "suggested_plan": f"Plan Enfoque {global_level}",
+            "average_score": round(avg_score, 2)
         }

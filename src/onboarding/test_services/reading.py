@@ -52,36 +52,41 @@ class ReadingTestService:
         }}
         """
 
-        # Usamos tu orquestador centralizado
-        response_json = await ask_oppy_ai(
+        # 1. Empaquetamos los mensajes para el orquestador
+        messages = [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        # 2. Llamada al orquestador centralizado
+        response_data = await ask_oppy_ai(
             db=db,
-            system_instruction=system_instruction,
-            user_prompt=user_prompt,
+            messages=messages,
             user_id=user_id,
             caller="placement_test_reading",
             expect_json=True
         )
 
+        # 3. Validación y parseo seguro
+        if isinstance(response_data, dict):
+            return response_data
+            
         try:
-            return json.loads(response_json)
-        except Exception as e:
+            return json.loads(response_data)
+        except (json.JSONDecodeError, TypeError) as e:
             logger.error(f"Error parsing JSON from Oppy AI: {e}")
             return self._get_fallback_task()
 
     def calculate_reading_level(self, user_answers: List[str], correct_answers: List[str]) -> dict:
         """
         Calcula el nivel CEFR basado en aciertos:
-        0 aciertos -> A1 (0 pts)
-        1 acierto  -> A2 (33 pts)
-        2 aciertos -> B1 (66 pts)
-        3 aciertos -> B2 (100 pts)
+        0 aciertos -> A1, 1 -> A2, 2 -> B1, 3 -> B2
         """
         hits = 0
         for i, ans in enumerate(user_answers):
             if i < len(correct_answers) and ans == correct_answers[i]:
                 hits += 1
         
-        # Mapeo de lógica solicitada
         mapping = {
             0: {"level": "A1", "score": 0.0},
             1: {"level": "A2", "score": 33.3},
@@ -92,9 +97,21 @@ class ReadingTestService:
         return mapping.get(hits, {"level": "A1", "score": 0.0})
 
     def _get_fallback_task(self) -> Dict[str, Any]:
+        """Tarea de respaldo en caso de error en la IA."""
         return {
             "title": "Professional Growth",
-            "story": "The integration of engineering and data is key in modern industry...",
+            "story": "The integration of engineering and data is key in modern industry. Professionals must adapt to new AI-driven environments to succeed.",
             "estimated_time": "~5 min",
-            "questions": []
+            "questions": [
+                {
+                    "id": 1,
+                    "question_text": "What is key in modern industry?",
+                    "options": [
+                        {"id": "A", "text": "Manual labor"},
+                        {"id": "B", "text": "Engineering and data integration"},
+                        {"id": "C", "text": "Traditional marketing"}
+                    ],
+                    "correct_option": "B"
+                }
+            ]
         }

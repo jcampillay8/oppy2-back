@@ -9,9 +9,6 @@ logger = logging.getLogger(__name__)
 
 class ListeningTestService:
     async def generate_listening_task(self, db: AsyncSession, user_id: int, user_bio: str) -> Dict[str, Any]:
-        """
-        Genera un script basado en la Bio, lo convierte a audio y define 3 preguntas.
-        """
         system_instruction = """
         You are an expert English teacher. Create a B2 Listening task.
         The script must be a natural monologue (approx 150 words) based on the user's professional bio.
@@ -20,45 +17,44 @@ class ListeningTestService:
 
         user_prompt = f"""
         CONTEXT: {user_bio}
-        
         REQUIREMENTS:
-        1. Script: A story about a professional challenge or achievement related to the bio.
+        1. Script: A story about a professional challenge or achievement.
         2. Questions: Exactly 3 multiple-choice questions.
-        3. Options: 3 options per question (A, B, C).
-        
+        3. Options: 3 per question (A, B, C).
         OUTPUT FORMAT:
         {{
             "title": "string",
             "script": "string",
             "questions": [
                 {{
-                    "id": 1,
-                    "question_text": "string",
-                    "options": [
-                        {{"id": "A", "text": "string"}},
-                        {{"id": "B", "text": "string"}},
-                        {{"id": "C", "text": "string"}}
-                    ],
+                    "id": 1, 
+                    "question_text": "string", 
+                    "options": [{{"id": "A", "text": "string"}}...], 
                     "correct_option": "A"
                 }}
             ]
         }}
         """
 
-        # 1. Generar Contenido con Gemini
-        response_json = await ask_oppy_ai(
+        # --- CORRECCIÓN DE MESSAGES ---
+        messages = [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        response_data = await ask_oppy_ai(
             db=db,
-            system_instruction=system_instruction,
-            user_prompt=user_prompt,
+            messages=messages,
             user_id=user_id,
             caller="placement_test_listening_gen",
             expect_json=True
         )
 
+        # Normalización de JSON
+        task_data = response_data if isinstance(response_data, dict) else json.loads(response_data)
+
         try:
-            task_data = json.loads(response_json)
-            
-            # 2. Generar Audio basado en el script de Gemini
+            # 2. Generar Audio basado en el script
             audio_content = await generate_oppy_voice(
                 db=db,
                 text=task_data["script"],
@@ -74,7 +70,6 @@ class ListeningTestService:
             return self._get_fallback_task()
 
     def calculate_listening_level(self, user_answers: List[str], correct_answers: List[str]) -> dict:
-        """Lógica idéntica al Reading para consistencia CEFR."""
         hits = sum(1 for i, ans in enumerate(user_answers) if i < len(correct_answers) and ans == correct_answers[i])
         mapping = {
             0: {"level": "A1", "score": 0.0},
@@ -85,6 +80,11 @@ class ListeningTestService:
         return mapping.get(hits, {"level": "A1", "score": 0.0})
 
     def _get_fallback_task(self) -> Dict[str, Any]:
-        return {"title": "Professional Life", "script": "Hello, I am an engineer...", "questions": []}
+        return {
+            "title": "Professional Life", 
+            "script": "Hello, I am an engineer working on interesting projects.", 
+            "questions": [],
+            "audio_content": b"" # Bytes vacíos para evitar error de pop()
+        }
 
 listening_service = ListeningTestService()

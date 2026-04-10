@@ -1,11 +1,9 @@
-# src/onboarding/test_services/speaking.pyimport logging
+# src/onboarding/test_services/speaking.py
 import logging
 import json
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.ai_management.services import ask_oppy_ai
-# Supongamos que tienes una utilidad de transcripción, si no, aquí iría la llamada a Whisper
-# from src.utils.audio import transcribe_audio 
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +15,9 @@ class SpeakingTestService:
         transcript: str, 
         target_language: str
     ) -> Dict[str, Any]:
+        """
+        Evalúa la transcripción de voz del usuario usando el orquestador Oppy AI.
+        """
         
         system_instruction = f"""
         You are an expert {target_language} Language Examiner.
@@ -38,26 +39,37 @@ class SpeakingTestService:
 
         user_prompt = f"TRANSCRIPT: \"{transcript}\""
 
+        # --- CORRECCIÓN CLAVE: Empaquetar en messages ---
+        messages = [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        # Llamada al orquestador con el formato correcto
         response_json = await ask_oppy_ai(
             db=db,
-            system_instruction=system_instruction,
-            user_prompt=user_prompt,
+            messages=messages,  # Enviamos el argumento requerido
             user_id=user_id,
             caller="onboarding_speaking_eval",
             expect_json=True
         )
 
         try:
-            # Si response_json ya es un dict por ask_oppy_ai, no necesitas json.loads
+            # Normalización segura
             data = json.loads(response_json) if isinstance(response_json, str) else response_json
-            # Aseguramos que la transcripción original se adjunte al resultado
+            
+            # Aseguramos que la transcripción original se adjunte al resultado para persistir
             data["transcript"] = transcript
             return data
+            
         except Exception as e:
             logger.error(f"Error parsing Speaking eval: {e}")
-            return {{
+            return {
                 "score": 10.0, 
                 "assigned_level": "A1", 
-                "feedback": "Error en la evaluación.",
+                "feedback": "Error en la evaluación técnica.",
                 "transcript": transcript
-            }}
+            }
+
+# Instancia para uso global (opcional, según tu patrón de routers)
+speaking_service = SpeakingTestService()
