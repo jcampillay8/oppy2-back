@@ -61,7 +61,7 @@ async def analyze_linguistic_errors(
         ],
         db=db,
         user_id=user_id,
-        response_format={"type": "json_object"},
+        expect_json=True,
         caller="LearningAnalysis_Auditor"
     )
 

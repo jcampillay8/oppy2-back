@@ -72,6 +72,8 @@ async def get_cache_setting():
 
 
 async def get_cache() -> aioredis.Redis:
+    if redis_pool is None:
+        raise HTTPException(status_code=503, detail="Cache service unavailable")
     return aioredis.Redis(connection_pool=redis_pool)
 
 async def get_current_user_ws(

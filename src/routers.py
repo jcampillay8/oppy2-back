@@ -7,8 +7,9 @@ from src.onboarding.router import router as onboarding_router
 from src.avatars.router import avatar_router
 from src.learning_analysis.router import router as learning_router
 
-# IMPORTAMOS EL NUEVO ROUTER DE CHAT
+# IMPORTAMOS EL NUEVO ROUTER DE CHAT Y LIBROS
 from src.chat.router import chat_router
+from src.books.routers import router as books_router
 
 # Lista de routers activos para OppyChat
 routers = [
@@ -19,5 +20,6 @@ routers = [
     onboarding_router,
     chat_router,
     avatar_router,
-    learning_router
+    learning_router,
+    books_router
 ]

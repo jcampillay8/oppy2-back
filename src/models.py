@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, List, Optional
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Table, Column, func, text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Table, Column, func, text, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -139,7 +139,7 @@ class Chat(BaseModel):
     id: Mapped[int] = mapped_column(primary_key=True)
     guid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(150))
-    system_prompt: Mapped[str] = mapped_column(String(2000))
+    system_prompt: Mapped[str] = mapped_column(Text)
 
     # Relaciones
     users: Mapped[List["User"]] = relationship(secondary=user_chat, back_populates="chats")
@@ -177,3 +177,4 @@ from src.onboarding.models import PlacementTest
 from src.ai_management.models import LLMRequestLog
 from src.avatars.models import AvatarDefinition
 from src.chat.models import ChatFact, UserMessageCorrection
+from src.books.models import Book, Chapter, Sentence, UserBookProgress, UserChapterProgress

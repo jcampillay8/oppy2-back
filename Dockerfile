@@ -31,7 +31,8 @@ RUN uv pip install .
 
 # === 4. ✅ Verificación Integral ===
 RUN python -c "import pydantic; print('✅ Pydantic OK')" && \
-    python -c "import weasyprint; print('✅ WeasyPrint OK')"
+    python -c "import weasyprint; print('✅ WeasyPrint OK')" && \
+    python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
 
 # === 5. Copia del código ===
 # Se hace al final para que cambios en el código no invaliden la caché de las librerías

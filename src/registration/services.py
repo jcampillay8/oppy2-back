@@ -27,14 +27,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CHUNK_SIZE = 1024 * 1024 * 1  # 1 megabyte
 
-TEST_EMAILS_BYPASS = {
-    "test_user_1784867943983167886@testuser.com",
-    "test_user01@gmail.com",
-    "test_user02@gmail.com",
-    "Benjamin@oppychat.com"
-    # Agrega otros correos de prueba de MP si es necesario para otros países:
-    # "test_user_OTRO_PAIS@testuser.com",
-}
+# ⚠️ BYPASS DE SEGURIDAD ELIMINADO - Requiere verificación de email real
+# TEST_EMAILS_BYPASS = {...}  # Comentado por seguridad
 
 TEST_EMAIL_REDIRECT = None
 

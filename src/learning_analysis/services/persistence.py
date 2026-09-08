@@ -133,3 +133,138 @@ async def update_instance_rating(
     await db.execute(stmt)
     await db.commit()
     return {"status": "updated"}
+
+# --- LEARNING PATH PROGRESS ---
+
+from ..models import LearningPathProgress
+
+async def get_learning_path_progress(
+    db: AsyncSession, 
+    user_id: int, 
+    course_type: str = "standard"
+) -> List[LearningPathProgress]:
+    stmt = (
+        select(LearningPathProgress)
+        .where(
+            LearningPathProgress.user_id == user_id,
+            LearningPathProgress.course_type == course_type
+        )
+        .order_by(LearningPathProgress.level.asc(), LearningPathProgress.unit.asc())
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+async def upsert_learning_path_progress(
+    db: AsyncSession,
+    user_id: int,
+    level: int,
+    unit: int,
+    status: str,
+    precision_score: Optional[float] = None,
+    course_type: str = "standard"
+) -> LearningPathProgress:
+    stmt = select(LearningPathProgress).where(
+        LearningPathProgress.user_id == user_id,
+        LearningPathProgress.course_type == course_type,
+        LearningPathProgress.level == level,
+        LearningPathProgress.unit == unit
+    )
+    progress = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if progress:
+        progress.status = status
+        if precision_score is not None:
+            progress.precision_score = precision_score
+        progress.last_practiced_at = datetime.now(timezone.utc)
+    else:
+        progress = LearningPathProgress(
+            user_id=user_id,
+            course_type=course_type,
+            level=level,
+            unit=unit,
+            status=status,
+            precision_score=precision_score,
+            last_practiced_at=datetime.now(timezone.utc)
+        )
+        db.add(progress)
+        
+    await db.commit()
+    await db.refresh(progress)
+    return progress
+
+# --- USER DAILY ACTIVITY & STREAK ---
+
+from datetime import date, timedelta
+from ..models import UserDailyActivity
+
+async def increment_user_daily_activity(
+    db: AsyncSession,
+    user_id: int,
+    course_type: str = "ielts"
+) -> UserDailyActivity:
+    today_date = date.today()
+    stmt = select(UserDailyActivity).where(
+        UserDailyActivity.user_id == user_id,
+        UserDailyActivity.course_type == course_type,
+        UserDailyActivity.activity_date == today_date
+    )
+    activity = (await db.execute(stmt)).scalar_one_or_none()
+
+    if activity:
+        activity.response_count += 1
+    else:
+        activity = UserDailyActivity(
+            user_id=user_id,
+            course_type=course_type,
+            activity_date=today_date,
+            response_count=1
+        )
+        db.add(activity)
+
+    await db.commit()
+    await db.refresh(activity)
+    return activity
+
+async def get_user_activity_stats(
+    db: AsyncSession,
+    user_id: int,
+    course_type: str = "ielts"
+) -> Dict[str, Any]:
+    stmt = (
+        select(UserDailyActivity)
+        .where(
+            UserDailyActivity.user_id == user_id,
+            UserDailyActivity.course_type == course_type
+        )
+        .order_by(UserDailyActivity.activity_date.asc())
+    )
+    result = await db.execute(stmt)
+    records = list(result.scalars().all())
+
+    activity_data = [
+        {"date": r.activity_date.isoformat(), "count": r.response_count}
+        for r in records
+    ]
+
+    total_responses = sum(r.response_count for r in records)
+    active_days_count = len([r for r in records if r.response_count > 0])
+    daily_average = round(total_responses / active_days_count, 1) if active_days_count > 0 else 0.0
+
+    dates_set = {r.activity_date for r in records if r.response_count > 0}
+    current_streak = 0
+    today = date.today()
+    check_date = today
+
+    if check_date not in dates_set:
+        check_date = today - timedelta(days=1)
+
+    while check_date in dates_set:
+        current_streak += 1
+        check_date -= timedelta(days=1)
+
+    return {
+        "current_streak": current_streak,
+        "total_responses": total_responses,
+        "daily_average": daily_average,
+        "activity_data": activity_data
+    }

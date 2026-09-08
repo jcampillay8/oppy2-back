@@ -4,7 +4,7 @@ import os
 from random import randint
 from pathlib import Path
 
-import boto3
+# import boto3  # Comentado: no se usa actualmente
 from typing import List, Dict, Any, Optional, Literal
 from pydantic import HttpUrl, Field, EmailStr, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -88,6 +88,8 @@ class GlobalSettings(BaseSettings):
 
     ADMIN_SECRET_KEY: str
     SECRET_KEY: str
+
+    DEEPL_API_KEY: Optional[str] = None
 
     # --- IA ---
     OPENAI_API_KEY: str

@@ -47,38 +47,41 @@ async def clear_cache_for_all_users(cache: aioredis.Redis):
     async for key in keys_found:
         await cache.delete(key)
 
+import difflib
+import string
+from typing import List, Dict, Any
+
 def highlight_differences(original_text: str, corrected_text: str) -> List[Dict[str, Any]]:
     """
     Compara dos cadenas de texto y devuelve una lista de diccionarios
-    que describen las diferencias palabra por palabra para su resaltado.
-
-    Args:
-        original_text (str): La cadena de texto original (ej. el mensaje del usuario).
-        corrected_text (str): La cadena de texto corregida (ej. la versión de la IA).
-
-    Returns:
-        List[Dict[str, Any]]: Una lista de diccionarios, donde cada diccionario
-                                tiene 'type' ('default', 'removed', 'added') y 'text'.
+    que describen las diferencias palabra por palabra para su resaltado,
+    ignorando puntuación y mayúsculas/minúsculas para no marcar falsos errores.
     """
-    s = difflib.SequenceMatcher(None, original_text.split(), corrected_text.split())
+    orig_words = original_text.split()
+    corr_words = corrected_text.split()
+    
+    # Limpiamos puntuación y pasamos a minúsculas solo para la comparación
+    orig_clean = [w.strip(string.punctuation).lower() for w in orig_words]
+    corr_clean = [w.strip(string.punctuation).lower() for w in corr_words]
+
+    s = difflib.SequenceMatcher(None, orig_clean, corr_clean)
     result = []
+    
     for tag, i1, i2, j1, j2 in s.get_opcodes():
         if tag == 'equal':
-            # Palabras idénticas en ambas versiones
-            for word in original_text.split()[i1:i2]:
+            # Palabras idénticas: mostramos la versión corregida (que tiene la puntuación ideal)
+            for word in corr_words[j1:j2]:
                 result.append({'type': 'default', 'text': word})
         elif tag == 'replace':
-            # Palabras reemplazadas: marcamos las originales como eliminadas y las nuevas como añadidas
-            for word in original_text.split()[i1:i2]:
+            for word in orig_words[i1:i2]:
                 result.append({'type': 'removed', 'text': word})
-            for word in corrected_text.split()[j1:j2]:
+            for word in corr_words[j1:j2]:
                 result.append({'type': 'added', 'text': word})
         elif tag == 'delete':
-            # Palabras presentes solo en el texto original (eliminadas en la corrección)
-            for word in original_text.split()[i1:i2]:
+            for word in orig_words[i1:i2]:
                 result.append({'type': 'removed', 'text': word})
         elif tag == 'insert':
-            # Palabras presentes solo en el texto corregido (añadidas en la corrección)
-            for word in corrected_text.split()[j1:j2]:
+            for word in corr_words[j1:j2]:
                 result.append({'type': 'added', 'text': word})
+                
     return result

@@ -92,16 +92,28 @@ class InteractionHandler:
         # 4. Generar respuesta de la IA
         llm_history = await self.msg_service.get_chat_history_for_llm(chat_id=chat.id, limit=10)
 
+        from src.learning_analysis.services.retrieval import get_top_weaknesses
+        weaknesses = await get_top_weaknesses(self.db, self.user.id)
+        
         # Filtramos el mensaje que acabamos de guardar para no duplicarlo 
         # (porque get_chat_history_for_llm trae los últimos N, incluyendo el actual)
         chat_history = [msg for msg in llm_history if msg["content"] != user_message_content]
+
+        if weaknesses:
+            weakness_text = ", ".join([f"{w['category']} ({w['count']} errors)" for w in weaknesses])
+            system_injection = (
+                f"PEDAGOGY ALERT: The student struggles with these English concepts: {weakness_text}. "
+                "Naturally steer the conversation to help them practice these topics. "
+                "If they make a mistake related to these, playfully correct them as an English Tutor while maintaining your character."
+            )
+            chat_history.insert(0, {"role": "system", "content": system_injection})
 
         bot_response_text = await generate_avatar_response(
             db=self.db,
             chat=chat,
             user_id=self.user.id,
             user_message=user_message_content,
-            chat_history=chat_history  # Sarah ahora tiene el contexto limpio
+            chat_history=chat_history  # Sarah (or Masha) ahora tiene el contexto limpio y de aprendizaje
         )
 
         bot_msg = await self.msg_service.create_message(

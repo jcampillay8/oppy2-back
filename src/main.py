@@ -5,8 +5,6 @@ import sentry_sdk
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-# 🛑 COMENTADO: Causa ImportError en Python 3.12 con uv
-# from fastapi_limiter.fastapi_limiter import FastAPILimiter 
 from fastapi_pagination import add_pagination
 from sqladmin import Admin
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -84,8 +82,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_allowed_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ==============================
@@ -123,6 +121,11 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Cerrando aplicación...")
+    if hasattr(app.state, 'redis') and app.state.redis:
+        await app.state.redis.close()
+        logger.info("Conexión a Redis cerrada")
+    from src.chat.manager import websocket_manager
+    await websocket_manager.cleanup()
 
 
 @app.exception_handler(RequestValidationError)

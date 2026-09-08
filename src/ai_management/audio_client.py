@@ -32,6 +32,18 @@ STANDARD_VOICES = {
     }
 }
 
+# Configuración de Voces para Listening IELTS (8 Voces EE. UU. masculinas y femeninas)
+LISTENING_VOICES = {
+    "en-US-Standard-A": {"gender": "Male", "ssml_gender": texttospeech.SsmlVoiceGender.MALE},
+    "en-US-Standard-B": {"gender": "Male", "ssml_gender": texttospeech.SsmlVoiceGender.MALE},
+    "en-US-Standard-D": {"gender": "Male", "ssml_gender": texttospeech.SsmlVoiceGender.MALE},
+    "en-US-Standard-J": {"gender": "Male", "ssml_gender": texttospeech.SsmlVoiceGender.MALE},
+    "en-US-Standard-E": {"gender": "Female", "ssml_gender": texttospeech.SsmlVoiceGender.FEMALE},
+    "en-US-Standard-F": {"gender": "Female", "ssml_gender": texttospeech.SsmlVoiceGender.FEMALE},
+    "en-US-Standard-G": {"gender": "Female", "ssml_gender": texttospeech.SsmlVoiceGender.FEMALE},
+    "en-US-Standard-H": {"gender": "Female", "ssml_gender": texttospeech.SsmlVoiceGender.FEMALE},
+}
+
 class TTSClient:
     def __init__(self):
         self.client = self._init_client()
@@ -98,6 +110,34 @@ class TTSClient:
             return response.audio_content
         except Exception as e:
             logger.error(f"Error en synthesize_speech: {e}")
+            raise e
+
+    async def synthesize_speech_voice(self, text: str, voice_name: str = "en-US-Standard-E", speaking_rate: float = 1.0) -> bytes:
+        """Sintetiza texto con una voz específica de Listening IELTS."""
+        try:
+            voice_info = LISTENING_VOICES.get(voice_name, LISTENING_VOICES["en-US-Standard-E"])
+            
+            synthesis_input = texttospeech.SynthesisInput(text=text)
+            
+            voice = texttospeech.VoiceSelectionParams(
+                language_code="en-US",
+                name=voice_name,
+                ssml_gender=voice_info["ssml_gender"]
+            )
+            
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.MP3,
+                speaking_rate=speaking_rate
+            )
+
+            response = self.client.synthesize_speech(
+                input=synthesis_input, 
+                voice=voice, 
+                audio_config=audio_config
+            )
+            return response.audio_content
+        except Exception as e:
+            logger.error(f"Error en synthesize_speech_voice ({voice_name}): {e}")
             raise e
 
 # Instancia global

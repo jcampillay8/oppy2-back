@@ -1,6 +1,7 @@
 # src/authentication/google_oauth_router.py
 from pydantic import BaseModel
 import logging
+import requests as sync_requests
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -47,31 +48,54 @@ async def google_mobile_signin(
     request: Request
 ):
     try:
-        # Validar el token con Google usando tu CLIENT_ID de WEB
-        # Nota: Google recomienda usar el Web Client ID para validación en backend
-        id_info = id_token.verify_oauth2_token(
-            data.id_token, 
-            requests.Request(), 
-            settings.GOOGLE_CLIENT_ID 
-        )
+        id_info = None
+        
+        # ✅ PASO 1: Identificar el tipo de token
+        # Los ID Tokens son JWT (tienen 3 segmentos separados por '.')
+        # Los Access Tokens de Google suelen empezar con 'ya29.'
+        
+        if data.id_token.startswith("ya29.") or "." not in data.id_token:
+            logger.info("Detectado Access Token de Google (Web Flow)")
+            # Validar contra el endpoint de userinfo de Google
+            response = sync_requests.get(
+                f"https://www.googleapis.com/oauth2/v3/userinfo?access_token={data.id_token}"
+            )
+            if response.status_code != 200:
+                raise ValueError("Access Token inválido o expirado")
+            
+            id_info = response.json()
+            # Normalizamos las llaves porque userinfo devuelve 'sub' en lugar de 'user_id'
+            # y ya tenemos el email, given_name, family_name, etc.
+        else:
+            logger.info("Detectado ID Token de Google (Mobile Flow)")
+            # Validar el JWT estándar
+            id_info = id_token.verify_oauth2_token(
+                data.id_token, 
+                requests.Request(), 
+                settings.GOOGLE_CLIENT_ID 
+            )
 
+        # ✅ PASO 2: Extraer información (común para ambos flujos)
         email = id_info.get("email").lower()
         
-        # 3. Reutilizamos tu lógica de base de datos que ya tienes en el callback
+        # 3. Lógica de base de datos
         user = await get_user_by_email(db_session, email=email)
         
         if not user:
-            # Crear usuario si no existe
             user = await create_user_from_google_credentials(
                 db_session,
                 email=email,
-                given_name=id_info.get("given_name", ""),
+                given_name=id_info.get("given_name", id_info.get("name", "")),
                 family_name=id_info.get("family_name", ""),
                 picture=id_info.get("picture", None),
                 request=request
             )
+        else:
+            # Actualizar último login
+            user.last_login = datetime.now(timezone.utc)
+            await create_user_session_history(db_session, user.id, request)
         
-        # 4. Generar los tokens de OppyChat (JWT)
+        # 4. Generar tokens de OppyChat
         access_token = create_access_token(subject=user.email)
         refresh_token = create_refresh_token(subject=user.email)
 
@@ -84,8 +108,11 @@ async def google_mobile_signin(
         }
 
     except ValueError as e:
-        logger.error(f"Token de Google inválido: {e}")
-        raise HTTPException(status_code=401, detail="Token de Google inválido")
+        logger.error(f"Error de validación Google: {e}")
+        raise HTTPException(status_code=401, detail=f"Token inválido: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error inesperado en Google Sign-In: {e}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 @google_router.get("/login", summary="Initiate Google OAuth login flow")
 async def google_login(request: Request):

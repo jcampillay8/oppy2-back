@@ -106,13 +106,26 @@ class WebSocketManager:
                                         await socket.send_bytes(payload)
                             except Exception as e:
                                 logger.error(f"Error enviando mensaje en {chat_guid}: {e}")
-                                sockets.remove(socket)
+                                sockets.discard(socket)
         except asyncio.CancelledError:
             logger.info("PubSub reader task cancelled.")
         except Exception as e:
             logger.error(f"Error fatal en PubSub reader: {e}", exc_info=True)
         finally:
             self.pubsub_subscriber_task = None
+
+    async def cleanup(self):
+        """Limpia recursos al cerrar la aplicación."""
+        if self.pubsub_subscriber_task and not self.pubsub_subscriber_task.done():
+            self.pubsub_subscriber_task.cancel()
+            try:
+                await self.pubsub_subscriber_task
+            except asyncio.CancelledError:
+                pass
+        await self.pubsub_manager.disconnect()
+        self.chats.clear()
+        self.user_guid_to_websocket.clear()
+        logger.info("WebSocket manager cleaned up")
 
     async def send_error(self, message: str, websocket: WebSocket):
         """Envía un mensaje de error JSON al socket."""

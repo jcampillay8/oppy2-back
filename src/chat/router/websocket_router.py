@@ -29,13 +29,11 @@ router = APIRouter()
 async def websocket_endpoint(
     websocket: WebSocket,
     chat_guid: UUID,
-    # Nota: get_current_user debe manejar internamente el error de Auth para WS
     current_user: User = Depends(get_current_user_ws), 
     cache = Depends(get_cache),
     cache_enabled: bool = Depends(get_cache_setting),
 ):
     # 1. Validación de existencia del Chat y acceso
-    # Usamos un context manager de sesión aquí para asegurar que la sesión sea fresca
     async with async_session_maker() as db_session:
         chat_query = await db_session.execute(
             select(Chat)
@@ -43,14 +41,14 @@ async def websocket_endpoint(
             .options(selectinload(Chat.users))
         )
         chat_obj = chat_query.scalar_one_or_none()
-
+        
         if not chat_obj or current_user not in chat_obj.users:
             logger.warning(f"WS Denied: Chat {chat_guid} not authorized for user {current_user.id}")
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         
-        chat_id = chat_obj.id # Guardamos el ID integer para el loop
-
+        chat_id = chat_obj.id  # Guardamos el ID integer para el loop
+    
     # 2. Inicialización de servicios y conexión
     presence = PresenceService(cache)
     await websocket_manager.connect_socket(websocket)
@@ -65,6 +63,17 @@ async def websocket_endpoint(
     # Marcar presencia inicial
     await presence.set_user_online(current_user.id)
 
+    # Heartbeat task para detectar conexiones muertas
+    async def send_heartbeat():
+        while True:
+            await asyncio.sleep(30)
+            try:
+                await websocket.send_json({"type": "ping"})
+            except:
+                break
+
+    heartbeat_task = asyncio.create_task(send_heartbeat())
+    
     try:
         while True:
             # Recibimos el JSON
@@ -76,11 +85,11 @@ async def websocket_endpoint(
                 
                 message_type = data.get("type")
                 handler = websocket_manager.handlers.get(message_type)
-
+                
                 if not handler:
                     await websocket_manager.send_error(f"Type {message_type} not supported", websocket)
                     continue
-
+                
                 # EJECUCIÓN DEL HANDLER MODULAR
                 await handler(
                     websocket=websocket,
@@ -94,17 +103,21 @@ async def websocket_endpoint(
                 
                 # Update de presencia "heartbeat"
                 await presence.set_user_online(current_user.id)
-
+    
     except WebSocketDisconnect:
         logger.info(f"WS Disconnect: User {current_user.id} left chat {chat_guid}")
-
     except JSONDecodeError:
         logger.error("Invalid JSON received")
-        
     except Exception as e:
         logger.error(f"Fatal WS Error: {e}", exc_info=True)
-
     finally:
+        # Cancelar heartbeat
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+        
         # --- LIMPIEZA ---
         await websocket_manager.remove_user_from_chat(chat_guid_str, websocket)
         await websocket_manager.remove_user_guid_to_websocket(user_guid_str, websocket)

@@ -3,6 +3,7 @@ import asyncio
 import logging
 import json
 import time
+import random
 from typing import Optional, List, Dict
 from datetime import datetime, timezone
 
@@ -103,7 +104,9 @@ async def ask_oppy_ai(
             logger.warning(f"Intento {attempt}/{retries+1} fallido para {caller}: {e}")
             
             if attempt <= retries:
-                await asyncio.sleep(2 ** attempt)
+                # Backoff exponencial con jitter para evitar thundering herd
+                jitter = random.uniform(0, 1)
+                await asyncio.sleep(2 ** attempt + jitter)
             else:
                 # 5. Registro de fallo final
                 log = LLMRequestLog(

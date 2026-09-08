@@ -5,6 +5,7 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column
 from datetime import datetime, timezone
 import uuid
 from src.database import BaseModel
+from src.config import settings
 from typing import Dict, Any, List, Optional
 from src.avatars.schemas import OutputFormatEnum, VoiceKeyEnum
 
@@ -14,13 +15,13 @@ class ChatFact(BaseModel):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     
-    chat_id: Mapped[int] = mapped_column(ForeignKey("chats.id"), nullable=False)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    chat_id: Mapped[int] = mapped_column(ForeignKey(f"{settings.DB_SCHEMA}.chats.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey(f"{settings.DB_SCHEMA}.users.id"), nullable=False)
     
     # ⭐ CAMBIO: Ahora apunta a avatar_definitions.guid
-    avatar_definition_id: Mapped[int | None] = mapped_column(ForeignKey("avatar_definitions.id"), nullable=True)
+    avatar_definition_id: Mapped[int | None] = mapped_column(ForeignKey(f"{settings.DB_SCHEMA}.avatar_definitions.id"), nullable=True)
     
-    source_message_id: Mapped[int] = mapped_column(ForeignKey("messages.id"), nullable=False)
+    source_message_id: Mapped[int] = mapped_column(ForeignKey(f"{settings.DB_SCHEMA}.messages.id"), nullable=False)
 
     fact_type: Mapped[str] = mapped_column(String(255), nullable=False)
     fact_value: Mapped[str] = mapped_column(Text, nullable=False)
@@ -38,8 +39,8 @@ class UserMessageCorrection(BaseModel):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
-    message_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("messages.id"), nullable=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey(f"{settings.DB_SCHEMA}.users.id"), nullable=False)
+    message_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey(f"{settings.DB_SCHEMA}.messages.id"), nullable=True)
 
     original_text: Mapped[str] = mapped_column(Text, nullable=False)
     corrected_text: Mapped[str] = mapped_column(Text, nullable=False)

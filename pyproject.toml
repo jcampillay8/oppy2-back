@@ -88,6 +88,8 @@ dependencies = [
 
   "py-spy>=0.4.0", # Para perfilado de rendimiento
   "json-repair>=0.30.0",
+  "pdfplumber>=0.11.0",
+  "nltk>=3.8.1",
 
   # --- Testing ---
   "pytest==8.4.1",

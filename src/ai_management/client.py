@@ -3,6 +3,7 @@ import os
 import time
 from typing import Any # Añadido
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from .schemas import AIResponse
 
 # Configuración global de la API
@@ -28,19 +29,24 @@ async def call_gemini_api(
     generation_config = {"temperature": temperature}
     if expect_json:
         generation_config["response_mime_type"] = "application/json"
+        
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
     
     # Ejecución única con timeout
     response = await model.generate_content_async(
         user_prompt,
         generation_config=generation_config,
+        safety_settings=safety_settings,
         request_options={"timeout": 60.0} 
     )
     
-    # Manejo de seguridad (Safety Filter)
-    try:
-        content = response.text
-    except ValueError:
-        content = "{}" if expect_json else "Error: Respuesta bloqueada por filtros de seguridad."
+    # Obtenemos la respuesta directamente sin manejo de errores de seguridad local
+    content = response.text
     
     # Metadatos de tokens
     usage = response.usage_metadata
