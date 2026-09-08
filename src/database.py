@@ -89,6 +89,8 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
 # 🧠 Función para crear un pool de conexiones a Redis
 
 def create_redis_pool():
+    if settings.REDIS_URL:
+        return aioredis.ConnectionPool.from_url(settings.REDIS_URL)
     return aioredis.ConnectionPool(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,

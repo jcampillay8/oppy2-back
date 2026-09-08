@@ -97,9 +97,10 @@ class GlobalSettings(BaseSettings):
 
     # --- Redis, status, static, AWS (igual que tenías) ---
     REDIS_CACHE_ENABLED: bool = True
-    REDIS_HOST: str
-    REDIS_PORT: int
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
     REDIS_PASSWORD: Optional[str] = None
+    REDIS_URL: Optional[str] = None
     REDIS_CACHE_EXPIRATION_SECONDS: int = 60 * 30
     REDIS_DB: int = 0
 

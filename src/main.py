@@ -101,8 +101,10 @@ add_pagination(app)
 async def startup():
     logger.info(f"🚀 OppyChat API arrancando en modo: {settings.ENVIRONMENT}")
     
-    # Construir URL de Redis con contraseña si existe
-    if settings.REDIS_PASSWORD:
+    # Construir URL de Redis con contraseña o usar REDIS_URL directa si existe
+    if settings.REDIS_URL:
+        redis_url = settings.REDIS_URL
+    elif settings.REDIS_PASSWORD:
         redis_url = f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
     else:
         redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
@@ -111,7 +113,7 @@ async def startup():
         # Usamos el cliente asíncrono para verificar la conexión
         redis_client = aioredis.from_url(redis_url, encoding="utf8", decode_responses=True)
         await redis_client.ping()
-        logger.info(f"✅ Conexión a Redis exitosa en {settings.REDIS_HOST}")
+        logger.info(f"✅ Conexión a Redis exitosa")
         # Aquí podrías guardar el cliente en app.state si lo necesitas globalmente
         app.state.redis = redis_client 
     except Exception as e:
