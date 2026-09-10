@@ -178,3 +178,12 @@ class UnitCompleteResponse(BaseModel):
     status: str
     precision_score: float
     unlocked_next: bool
+
+class SmartReviewSuggestionResponse(BaseModel):
+    has_mastered_units: bool
+    level: Optional[int] = None
+    unit: Optional[int] = None
+    unit_title: Optional[str] = None
+    precision_score: Optional[float] = None
+    days_since_practiced: Optional[int] = None
+    reason_text: Optional[str] = None

@@ -241,6 +241,15 @@ async def complete_ielts_unit_session(
         unlocked_next=unlocked_next
     )
 
+from .services import smart_review_service
+
+@router.get("/ielts-path/smart-review/suggest", response_model=schemas.SmartReviewSuggestionResponse)
+async def get_smart_review_suggestion(
+    db: AsyncSession = Depends(get_async_session),
+    user: User = Depends(get_current_user)
+):
+    return await smart_review_service.get_smart_review_suggestion(db, user.id, course_type="ielts")
+
 # --- ENDPOINTS LISTENING IELTS ---
 
 from .services import listening_tutor_service
