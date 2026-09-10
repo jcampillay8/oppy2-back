@@ -210,7 +210,7 @@ async def complete_ielts_unit_session(
     )
     
     unlocked_next = False
-    if status == "mastered":
+    if current_progress.status == "mastered":
         syllabus = ielts_syllabus.load_ielts_syllabus()
         level_data = syllabus.get(request.level, {})
         max_units = len(level_data.get("units", {}))
@@ -236,8 +236,8 @@ async def complete_ielts_unit_session(
     return schemas.UnitCompleteResponse(
         level=request.level,
         unit=request.unit,
-        status=status,
-        precision_score=request.precision_score,
+        status=current_progress.status,
+        precision_score=current_progress.precision_score,
         unlocked_next=unlocked_next
     )
 

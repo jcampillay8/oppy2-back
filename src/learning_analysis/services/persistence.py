@@ -171,19 +171,47 @@ async def upsert_learning_path_progress(
     )
     progress = (await db.execute(stmt)).scalar_one_or_none()
     
+    # Normalize score if provided (e.g. 0.8 -> 80.0)
+    norm_score = precision_score
+    if norm_score is not None and 0.0 < norm_score <= 1.0:
+        norm_score = norm_score * 100.0
+
     if progress:
-        progress.status = status
-        if precision_score is not None:
-            progress.precision_score = precision_score
+        # 1. Retain highest score ever achieved (high-water mark)
+        if norm_score is not None:
+            if progress.precision_score is not None:
+                existing_norm = progress.precision_score
+                if 0.0 < existing_norm <= 1.0:
+                    existing_norm = existing_norm * 100.0
+                progress.precision_score = max(existing_norm, norm_score)
+            else:
+                progress.precision_score = norm_score
+
+        # 2. Preserve mastered status permanently (never degrade to in_progress)
+        is_already_mastered = (progress.status == "mastered")
+        is_newly_mastered = (status == "mastered")
+        score_is_mastered = (
+            progress.precision_score is not None and progress.precision_score >= 80.0
+        )
+
+        if is_already_mastered or is_newly_mastered or score_is_mastered:
+            progress.status = "mastered"
+        else:
+            progress.status = status
+
         progress.last_practiced_at = datetime.now(timezone.utc)
     else:
+        final_status = status
+        if norm_score is not None and norm_score >= 80.0:
+            final_status = "mastered"
+
         progress = LearningPathProgress(
             user_id=user_id,
             course_type=course_type,
             level=level,
             unit=unit,
-            status=status,
-            precision_score=precision_score,
+            status=final_status,
+            precision_score=norm_score,
             last_practiced_at=datetime.now(timezone.utc)
         )
         db.add(progress)
