@@ -18,9 +18,11 @@ class UserDailyActivity(BaseModel):
     course_type: Mapped[str] = mapped_column(String(30), default="ielts") # ielts, standard
     activity_date: Mapped[datetime] = mapped_column(Date, nullable=False)
     response_count: Mapped[int] = mapped_column(Integer, default=0)
+    vocab_leftover: Mapped[int] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+
 
 
 class UserLearningProfile(BaseModel):

@@ -251,7 +251,46 @@ async def increment_user_daily_activity(
 
     await db.commit()
     await db.refresh(activity)
-    return activity
+async def increment_user_vocab_activity(
+    db: AsyncSession,
+    user_id: int,
+    course_type: str = "ielts"
+) -> bool:
+    """
+    Acumula respuestas de vocabulario. Por cada 3 respuestas resueltas,
+    suma +1 al contador de actividad diaria (response_count) para la racha.
+    Retorna True si en este intento se incrementó la actividad diaria.
+    """
+    today_date = date.today()
+    stmt = select(UserDailyActivity).where(
+        UserDailyActivity.user_id == user_id,
+        UserDailyActivity.course_type == course_type,
+        UserDailyActivity.activity_date == today_date
+    )
+    activity = (await db.execute(stmt)).scalar_one_or_none()
+
+    if not activity:
+        activity = UserDailyActivity(
+            user_id=user_id,
+            course_type=course_type,
+            activity_date=today_date,
+            response_count=0,
+            vocab_leftover=0
+        )
+        db.add(activity)
+
+    activity.vocab_leftover += 1
+    activity_incremented = False
+
+    if activity.vocab_leftover >= 3:
+        added_points = activity.vocab_leftover // 3
+        activity.vocab_leftover = activity.vocab_leftover % 3
+        activity.response_count += added_points
+        activity_incremented = True
+
+    await db.commit()
+    await db.refresh(activity)
+    return activity_incremented
 
 async def get_user_activity_stats(
     db: AsyncSession,

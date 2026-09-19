@@ -3,6 +3,7 @@ import unicodedata
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fastapi import HTTPException
+from src.ai_management.services import ask_oppy_ai
 from src.learning_analysis.models import VocabularyWord
 from src.learning_analysis.schemas import VocabularyWordCreate, VocabularyWordResponse, VocabularyPracticeRequest, VocabularyPracticeResult
 
@@ -26,6 +27,37 @@ def normalize_text(text: str) -> str:
     text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
     return text
 
+async def generate_vocabulary_context(db: AsyncSession, user_id: int, spanish_word: str, english_word: str) -> str:
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an expert English-Spanish ESL tutor. Generate a simple, clear, natural example sentence pair "
+                "using the Spanish word and English word provided. "
+                "Output MUST be exactly in this format without markdown or extra text:\n"
+                "ES: <Spanish sentence> | EN: <English sentence>"
+            )
+        },
+        {
+            "role": "user",
+            "content": f"Spanish word: {spanish_word}\nEnglish word: {english_word}"
+        }
+    ]
+    try:
+        response_text = await ask_oppy_ai(
+            db=db,
+            messages=messages,
+            user_id=user_id,
+            caller="vocabulary_context_generator",
+            expect_json=False
+        )
+        if response_text and "ES:" in response_text and "EN:" in response_text:
+            return response_text.strip()
+    except Exception as e:
+        print(f"Error generating vocabulary context: {e}")
+    
+    return f"ES: Usamos la palabra '{spanish_word}' en esta oración. | EN: We use the word '{english_word}' in this sentence."
+
 async def save_word(db: AsyncSession, user_id: int, word_in: VocabularyWordCreate) -> VocabularyWordResponse:
     # Ver si ya existe
     result = await db.execute(select(VocabularyWord).where(
@@ -38,11 +70,15 @@ async def save_word(db: AsyncSession, user_id: int, word_in: VocabularyWordCreat
     if existing:
         return existing
         
+    context = word_in.context_sentence
+    if not context or not context.strip():
+        context = await generate_vocabulary_context(db, user_id, word_in.spanish_word, word_in.english_word)
+        
     new_word = VocabularyWord(
         user_id=user_id,
         spanish_word=word_in.spanish_word,
         english_word=word_in.english_word,
-        context_sentence=word_in.context_sentence,
+        context_sentence=context,
         score=3,
         is_mastered=False
     )
@@ -50,6 +86,21 @@ async def save_word(db: AsyncSession, user_id: int, word_in: VocabularyWordCreat
     await db.commit()
     await db.refresh(new_word)
     return new_word
+
+async def get_vocabulary_stats(db: AsyncSession, user_id: int) -> dict:
+    result = await db.execute(select(VocabularyWord).where(VocabularyWord.user_id == user_id))
+    all_words = result.scalars().all()
+    
+    total = len(all_words)
+    in_review = sum(1 for w in all_words if not w.is_mastered)
+    mastered = sum(1 for w in all_words if w.is_mastered)
+    
+    return {
+        "total": total,
+        "in_review": in_review,
+        "mastered": mastered
+    }
+
 
 async def get_practice_word(db: AsyncSession, user_id: int) -> VocabularyWordResponse:
     result = await db.execute(select(VocabularyWord).where(
@@ -69,15 +120,14 @@ async def get_practice_word(db: AsyncSession, user_id: int) -> VocabularyWordRes
         
     return active_words[0]
 
+from src.learning_analysis.services.persistence import increment_user_vocab_activity
+
 async def evaluate_word(db: AsyncSession, user_id: int, request: VocabularyPracticeRequest) -> VocabularyPracticeResult:
     word = await db.get(VocabularyWord, request.word_id)
     if not word or word.user_id != user_id:
         raise HTTPException(status_code=404, detail="Word not found")
         
-    # Puede que estemos preguntando de Esp->Ing o Ing->Esp
-    # Dado que el backend no sabe qué dirección se preguntó, vamos a verificar 
-    # si la respuesta se parece al inglés o al español.
-    # (Lo más robusto sería que el frontend envíe la dirección, pero podemos verificar ambos).
+    old_score = word.score
     
     user_ans = normalize_text(request.user_answer)
     eng_target = normalize_text(word.english_word)
@@ -112,13 +162,19 @@ async def evaluate_word(db: AsyncSession, user_id: int, request: VocabularyPract
     await db.commit()
     await db.refresh(word)
     
+    # Incrementar actividad acumulada en el heatmap (3 vocabularios = +1 actividad)
+    activity_incremented = await increment_user_vocab_activity(db, user_id)
+    
     return VocabularyPracticeResult(
         is_correct=is_correct,
         correct_answer=correct_ans,
+        old_score=old_score,
         new_score=word.score,
         is_mastered=word.is_mastered,
-        feedback=feedback
+        feedback=feedback,
+        activity_incremented=activity_incremented
     )
+
 
 async def get_user_vocabulary_list(db: AsyncSession, user_id: int) -> list[VocabularyWordResponse]:
     result = await db.execute(

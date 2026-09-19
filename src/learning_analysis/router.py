@@ -79,6 +79,14 @@ async def list_user_vocabulary_words(
 ):
     return await vocabulary_service.get_user_vocabulary_list(db, user.id)
 
+@router.get("/vocabulary/stats")
+async def get_user_vocabulary_stats(
+    db: AsyncSession = Depends(get_async_session),
+    user: User = Depends(get_current_user)
+):
+    return await vocabulary_service.get_vocabulary_stats(db, user.id)
+
+
 @router.delete("/vocabulary/{word_id}")
 async def delete_vocabulary_word(
     word_id: int,

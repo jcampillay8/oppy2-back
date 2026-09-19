@@ -149,9 +149,12 @@ class VocabularyPracticeRequest(BaseModel):
 class VocabularyPracticeResult(BaseModel):
     is_correct: bool
     correct_answer: str
+    old_score: int = 3
     new_score: int
     is_mastered: bool
     feedback: str
+    activity_incremented: bool = False
+
 
 # --- SCHEMAS PARA LEARNING PATH (PRÁCTICA GUIADA) ---
 
