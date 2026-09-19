@@ -1,5 +1,7 @@
 import random
 import unicodedata
+import re
+import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fastapi import HTTPException
@@ -21,11 +23,83 @@ def levenshtein_distance(s1: str, s2: str) -> int:
         distances = distances_
     return distances[-1]
 
+def expand_contractions(text: str) -> str:
+    contractions = {
+        r"\bit's\b": "it is",
+        r"\bthat's\b": "that is",
+        r"\bthere's\b": "there is",
+        r"\bwhat's\b": "what is",
+        r"\bdon't\b": "do not",
+        r"\bdoesn't\b": "does not",
+        r"\bdidn't\b": "did not",
+        r"\bcan't\b": "cannot",
+        r"\bcouldn't\b": "could not",
+        r"\bwon't\b": "will not",
+        r"\bwouldn't\b": "would not",
+        r"\bshouldn't\b": "should not",
+        r"\bisn't\b": "is not",
+        r"\baren't\b": "are not",
+        r"\bwasn't\b": "was not",
+        r"\bweren't\b": "were not",
+        r"\bthey're\b": "they are",
+        r"\bwe're\b": "we are",
+        r"\byou're\b": "you are",
+        r"\bi'm\b": "i am",
+        r"\bhaven't\b": "have not",
+        r"\bhasn't\b": "has not",
+        r"\bhadn't\b": "had not",
+    }
+    for pattern, replacement in contractions.items():
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return text
+
 def normalize_text(text: str) -> str:
-    # Quitar acentos, espacios extras y pasar a minúscula
     text = text.strip().lower()
+    text = expand_contractions(text)
     text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
     return text
+
+def strip_subject_pronouns(text: str) -> str:
+    return re.sub(r'^(it|they|that|he|she|there)\s+', '', text.strip(), flags=re.IGNORECASE)
+
+async def validate_semantic_translation(
+    db: AsyncSession,
+    user_id: int,
+    spanish_word: str,
+    english_word: str,
+    context_sentence: str,
+    user_answer: str
+) -> bool:
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an expert bilingual English-Spanish ESL evaluator. "
+                "The student was asked to translate a word or short phrase.\n"
+                f"Target Spanish: '{spanish_word}'\n"
+                f"Canonical Target English: '{english_word}'\n"
+                f"Context Sentence: '{context_sentence}'\n"
+                f"Student Answer: '{user_answer}'\n\n"
+                "Determine if the student's answer is a valid, correct, or acceptable translation, synonym, "
+                "or grammatical variation (such as including/omitting subject pronouns or using valid synonyms like 'mandatory' for 'required').\n"
+                "Respond strictly with a JSON object: {\"is_valid\": true/false}"
+            )
+        }
+    ]
+    try:
+        raw_res = await ask_oppy_ai(
+            db=db,
+            messages=messages,
+            user_id=user_id,
+            caller="vocabulary_semantic_evaluator",
+            expect_json=True
+        )
+        data = json.loads(raw_res)
+        return bool(data.get("is_valid", False))
+    except Exception as e:
+        print(f"Error evaluating semantic translation: {e}")
+        return False
+
 
 async def generate_vocabulary_context(db: AsyncSession, user_id: int, spanish_word: str, english_word: str) -> str:
     messages = [
@@ -128,20 +202,45 @@ async def evaluate_word(db: AsyncSession, user_id: int, request: VocabularyPract
         raise HTTPException(status_code=404, detail="Word not found")
         
     old_score = word.score
+    raw_user_ans = request.user_answer.strip()
     
-    user_ans = normalize_text(request.user_answer)
-    eng_target = normalize_text(word.english_word)
-    spa_target = normalize_text(word.spanish_word)
+    is_correct = False
+    is_semantic_match = False
     
-    dist_eng = levenshtein_distance(user_ans, eng_target)
-    dist_spa = levenshtein_distance(user_ans, spa_target)
-    
-    # 1 de tolerancia por typo
-    is_correct = dist_eng <= 1 or dist_spa <= 1
-    
-    # Manejar caso de timeout (el frontend mandará un string vacío o especial)
-    if request.user_answer == "" or request.user_answer == "_timeout_":
-        is_correct = False
+    if raw_user_ans != "" and raw_user_ans != "_timeout_":
+        user_ans = normalize_text(raw_user_ans)
+        eng_target = normalize_text(word.english_word)
+        spa_target = normalize_text(word.spanish_word)
+        
+        dist_eng = levenshtein_distance(user_ans, eng_target)
+        dist_spa = levenshtein_distance(user_ans, spa_target)
+        
+        # Probar remover pronombres de sujeto (ej. "it already existed" vs "already existed")
+        user_no_p = strip_subject_pronouns(user_ans)
+        eng_no_p = strip_subject_pronouns(eng_target)
+        spa_no_p = strip_subject_pronouns(spa_target)
+        
+        dist_eng_no_p = levenshtein_distance(user_no_p, eng_no_p)
+        dist_spa_no_p = levenshtein_distance(user_no_p, spa_no_p)
+        
+        is_direct_match = (
+            dist_eng <= 1 or dist_spa <= 1 or 
+            dist_eng_no_p <= 1 or dist_spa_no_p <= 1
+        )
+        
+        if is_direct_match:
+            is_correct = True
+        else:
+            # Fallback inteligente con IA para evaluar sinónimos legítimos (ej: mandatory vs required)
+            is_semantic_match = await validate_semantic_translation(
+                db=db,
+                user_id=user_id,
+                spanish_word=word.spanish_word,
+                english_word=word.english_word,
+                context_sentence=word.context_sentence or "",
+                user_answer=raw_user_ans
+            )
+            is_correct = is_semantic_match
         
     feedback = ""
     correct_ans = word.english_word # Por defecto mostramos el inglés
@@ -152,9 +251,10 @@ async def evaluate_word(db: AsyncSession, user_id: int, request: VocabularyPract
             word.is_mastered = True
             feedback = "¡Dominaste esta palabra!"
         else:
-            feedback = "¡Correcto!"
-            if dist_eng == 1 or dist_spa == 1:
-                feedback = "¡Casi perfecto! Ten cuidado con la ortografía."
+            if is_semantic_match:
+                feedback = f"¡Excelente sinónimo! '{raw_user_ans}' es una traducción válida."
+            else:
+                feedback = "¡Correcto!"
     else:
         word.score += 1
         feedback = "Incorrecto o tiempo agotado."
@@ -174,6 +274,7 @@ async def evaluate_word(db: AsyncSession, user_id: int, request: VocabularyPract
         feedback=feedback,
         activity_incremented=activity_incremented
     )
+
 
 
 async def get_user_vocabulary_list(db: AsyncSession, user_id: int) -> list[VocabularyWordResponse]:
