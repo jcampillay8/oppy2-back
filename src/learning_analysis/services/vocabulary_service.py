@@ -280,6 +280,34 @@ async def evaluate_word(db: AsyncSession, user_id: int, request: VocabularyPract
     )
 
 
+async def override_word_eval(db: AsyncSession, user_id: int, request: VocabularyPracticeRequest) -> VocabularyPracticeResult:
+    word = await db.get(VocabularyWord, request.word_id)
+    if not word or word.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Word not found")
+
+    base_score = max(0, word.score - 1)
+    new_score = max(0, base_score - 1)
+
+    word.score = new_score
+    if new_score == 0:
+        word.is_mastered = True
+
+    await db.commit()
+    await db.refresh(word)
+
+    activity_incremented = await increment_user_vocab_activity(db, user_id)
+
+    return VocabularyPracticeResult(
+        is_correct=True,
+        correct_answer=word.english_word,
+        old_score=base_score,
+        new_score=word.score,
+        is_mastered=word.is_mastered,
+        feedback="¡Rescatado con Comodín! 🛡️ (Contado como Correcto)",
+        activity_incremented=activity_incremented
+    )
+
+
 
 async def get_user_vocabulary_list(db: AsyncSession, user_id: int) -> list[VocabularyWordResponse]:
     result = await db.execute(

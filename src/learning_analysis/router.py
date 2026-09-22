@@ -72,6 +72,14 @@ async def evaluate_vocabulary_word(
 ):
     return await vocabulary_service.evaluate_word(db, user.id, request)
 
+@router.post("/vocabulary/override", response_model=schemas.VocabularyPracticeResult)
+async def override_vocabulary_word_eval(
+    request: schemas.VocabularyPracticeRequest,
+    db: AsyncSession = Depends(get_async_session),
+    user: User = Depends(get_current_user)
+):
+    return await vocabulary_service.override_word_eval(db, user.id, request)
+
 @router.get("/vocabulary/list", response_model=List[schemas.VocabularyWordResponse])
 async def list_user_vocabulary_words(
     db: AsyncSession = Depends(get_async_session),
