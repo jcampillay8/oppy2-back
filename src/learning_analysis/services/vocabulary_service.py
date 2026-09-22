@@ -62,6 +62,9 @@ def normalize_text(text: str) -> str:
 def strip_subject_pronouns(text: str) -> str:
     return re.sub(r'^(it|they|that|he|she|there)\s+', '', text.strip(), flags=re.IGNORECASE)
 
+def strip_infinitive_to(text: str) -> str:
+    return re.sub(r'^\bto\b\s+', '', text.strip(), flags=re.IGNORECASE)
+
 async def validate_semantic_translation(
     db: AsyncSession,
     user_id: int,
@@ -81,7 +84,8 @@ async def validate_semantic_translation(
                 f"Context Sentence: '{context_sentence}'\n"
                 f"Student Answer: '{user_answer}'\n\n"
                 "Determine if the student's answer is a valid, correct, or acceptable translation, synonym, "
-                "or grammatical variation (such as including/omitting subject pronouns or using valid synonyms like 'mandatory' for 'required').\n"
+                "or grammatical variation (such as including/omitting infinitive 'to' like 'recommend' for 'to recommend', "
+                "including/omitting subject pronouns, or using valid synonyms like 'mandatory' for 'required').\n"
                 "Respond strictly with a JSON object: {\"is_valid\": true/false}"
             )
         }
@@ -215,9 +219,9 @@ async def evaluate_word(db: AsyncSession, user_id: int, request: VocabularyPract
         dist_eng = levenshtein_distance(user_ans, eng_target)
         dist_spa = levenshtein_distance(user_ans, spa_target)
         
-        # Probar remover pronombres de sujeto (ej. "it already existed" vs "already existed")
-        user_no_p = strip_subject_pronouns(user_ans)
-        eng_no_p = strip_subject_pronouns(eng_target)
+        # Probar remover pronombres de sujeto y partícula de infinitivo "to" (ej. "recommend" vs "to recommend")
+        user_no_p = strip_infinitive_to(strip_subject_pronouns(user_ans))
+        eng_no_p = strip_infinitive_to(strip_subject_pronouns(eng_target))
         spa_no_p = strip_subject_pronouns(spa_target)
         
         dist_eng_no_p = levenshtein_distance(user_no_p, eng_no_p)
