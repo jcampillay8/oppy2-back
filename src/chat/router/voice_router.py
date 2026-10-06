@@ -37,7 +37,10 @@ async def text_to_speech(request: TTSRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/stt")
-async def speech_to_text(audio: UploadFile = File(...)):
+async def speech_to_text(
+    audio: UploadFile = File(...),
+    lang: str = Form("en-US")
+):
     """
     Recibe un archivo de audio, lo convierte si es necesario, y lo transcribe con SpeechRecognition.
     """
@@ -62,7 +65,7 @@ async def speech_to_text(audio: UploadFile = File(...)):
         recognizer = sr.Recognizer()
         with sr.AudioFile(wav_path) as source:
             audio_data = recognizer.record(source)
-            text = recognizer.recognize_google(audio_data, language="es-CL")
+            text = recognizer.recognize_google(audio_data, language=lang)
             
         # Limpiar temporales
         try:
